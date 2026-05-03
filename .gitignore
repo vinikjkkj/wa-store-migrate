@@ -1,0 +1,8 @@
+/baileys
+/zapo
+/whatsmeow
+/wa-web
+node_modules
+dist
+coverage
+examples

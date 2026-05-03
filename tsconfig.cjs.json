@@ -1,0 +1,11 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "outDir": "dist/cjs",
+        "declaration": false,
+        "sourceMap": true
+    },
+    "exclude": ["dist", "node_modules", "src/**/__tests__/**"]
+}

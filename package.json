@@ -1,0 +1,80 @@
+{
+    "name": "wa-store-migrate",
+    "version": "0.0.0",
+    "description": "Universal store migrator for WhatsApp libraries (zapo, baileys, whatsmeow, wa-web)",
+    "license": "MIT",
+    "main": "dist/cjs/index.js",
+    "module": "dist/esm/index.js",
+    "types": "dist/types/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/types/index.d.ts",
+            "require": "./dist/cjs/index.js",
+            "import": "./dist/esm/index.js",
+            "default": "./dist/cjs/index.js"
+        },
+        "./baileys": {
+            "types": "./dist/types/adapters/baileys/index.d.ts",
+            "require": "./dist/cjs/adapters/baileys/index.js",
+            "import": "./dist/esm/adapters/baileys/index.js",
+            "default": "./dist/cjs/adapters/baileys/index.js"
+        },
+        "./zapo": {
+            "types": "./dist/types/adapters/zapo/index.d.ts",
+            "require": "./dist/cjs/adapters/zapo/index.js",
+            "import": "./dist/esm/adapters/zapo/index.js",
+            "default": "./dist/cjs/adapters/zapo/index.js"
+        },
+        "./whatsmeow": {
+            "types": "./dist/types/adapters/whatsmeow/index.d.ts",
+            "require": "./dist/cjs/adapters/whatsmeow/index.js",
+            "import": "./dist/esm/adapters/whatsmeow/index.js",
+            "default": "./dist/cjs/adapters/whatsmeow/index.js"
+        },
+        "./wa-web": {
+            "types": "./dist/types/adapters/wa-web/index.d.ts",
+            "require": "./dist/cjs/adapters/wa-web/index.js",
+            "import": "./dist/esm/adapters/wa-web/index.js",
+            "default": "./dist/cjs/adapters/wa-web/index.js"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "dist"
+    ],
+    "engines": {
+        "node": ">=20.9.0"
+    },
+    "scripts": {
+        "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+        "build:cjs": "tsc -p tsconfig.cjs.json && tsc-alias -p tsconfig.cjs.json --resolve-full-paths && node -e \"require('node:fs').writeFileSync('dist/cjs/package.json', '{\\\"type\\\":\\\"commonjs\\\"}\\n')\"",
+        "build:esm": "tsc -p tsconfig.esm.json && tsc-alias -p tsconfig.esm.json --resolve-full-paths && node -e \"require('node:fs').writeFileSync('dist/esm/package.json', '{\\\"type\\\":\\\"module\\\"}\\n')\"",
+        "build:types": "tsc -p tsconfig.types.json && tsc-alias -p tsconfig.types.json --resolve-full-paths",
+        "build": "npm run clean && npm run build:cjs && npm run build:esm && npm run build:types",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test": "node --import tsx --test \"src/**/__tests__/**/*.test.ts\"",
+        "test:watch": "node --import tsx --test --watch \"src/**/__tests__/**/*.test.ts\"",
+        "lint": "eslint .",
+        "lint:fix": "eslint . --fix",
+        "format": "prettier . --write",
+        "format:check": "prettier . --check"
+    },
+    "devDependencies": {
+        "@types/node": "^22.13.14",
+        "@typescript-eslint/eslint-plugin": "^8.59.1",
+        "@typescript-eslint/parser": "^8.59.1",
+        "@vinikjkkj/eslint-config": "^1.0.1",
+        "eslint": "^9.39.4",
+        "eslint-import-resolver-typescript": "^4.4.4",
+        "eslint-plugin-import": "^2.32.0",
+        "eslint-plugin-n": "^17.24.0",
+        "prettier": "^3.8.3",
+        "tsc-alias": "^1.8.17",
+        "tsx": "^4.20.6",
+        "typescript": "^5.7.3",
+        "typescript-eslint": "^8.59.1"
+    },
+    "dependencies": {
+        "zapo-js": "file:../../zapo"
+    }
+}

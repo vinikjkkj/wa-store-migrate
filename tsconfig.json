@@ -1,0 +1,37 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "paths": {
+            "@adapter": ["./src/adapter.ts"],
+            "@migrate": ["./src/migrate.ts"],
+            "@ir": ["./src/ir/index.ts"],
+            "@ir/*": ["./src/ir/*"],
+            "@codec": ["./src/codec/index.ts"],
+            "@codec/*": ["./src/codec/*"],
+            "@adapters/baileys": ["./src/adapters/baileys/index.ts"],
+            "@adapters/baileys/*": ["./src/adapters/baileys/*"],
+            "@adapters/zapo": ["./src/adapters/zapo/index.ts"],
+            "@adapters/zapo/*": ["./src/adapters/zapo/*"],
+            "@adapters/whatsmeow": ["./src/adapters/whatsmeow/index.ts"],
+            "@adapters/whatsmeow/*": ["./src/adapters/whatsmeow/*"],
+            "@adapters/wa-web": ["./src/adapters/wa-web/index.ts"],
+            "@adapters/wa-web/*": ["./src/adapters/wa-web/*"]
+        },
+        "lib": ["ES2022"],
+        "strict": true,
+        "exactOptionalPropertyTypes": true,
+        "noUncheckedIndexedAccess": true,
+        "noImplicitOverride": true,
+        "noFallthroughCasesInSwitch": true,
+        "isolatedModules": true,
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "resolveJsonModule": true,
+        "types": ["node"]
+    },
+    "include": ["src"],
+    "exclude": ["dist", "node_modules"]
+}
