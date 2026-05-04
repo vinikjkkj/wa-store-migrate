@@ -14,15 +14,9 @@ function toZapoAddress(addr: IrAddress): { user: string; server?: string; device
     return out
 }
 
-/**
- * baileys' sender-key serialization is `SenderKeyStateStructure[]` (states[]).
- * libsignal keeps up to 5 historical states; the current sending state is the
- * tail (`states[states.length - 1]` — same as `getSenderKeyState()`). zapo's
- * `SenderKeyRecord` collapses to a single state, which is what we encode.
- *
- * Round-trip from baileys → IR → baileys keeps only that latest state. Older
- * states are dropped — capabilities declare this as `lossy` for sender-keys.
- */
+// libsignal keeps up to 5 historical sender-key states; the current sending
+// state is the tail. zapo collapses to a single state, so older states are
+// lost on round-trip — declared `lossy` for `senderKeys`.
 export function baileysSenderKeyToProto(
     states: BaileysSerializedSenderKey,
     groupId: string,
@@ -52,10 +46,8 @@ export function baileysSenderKeyToProto(
     }
 
     if (state.senderSigningKey.private) {
-        // Mutate (rather than spread) so the inferred type for `record` keeps
-        // `signingPrivateKey?: Uint8Array` instead of `Uint8Array | undefined`,
-        // which is the exactOptionalPropertyTypes-correct shape. We already
-        // checked the source is truthy so `asBytes` (non-optional) is safe.
+        // Mutate so `signingPrivateKey?` stays optional (vs `| undefined`)
+        // under exactOptionalPropertyTypes.
         ;(record as { signingPrivateKey?: Uint8Array }).signingPrivateKey = asBytes(
             state.senderSigningKey.private,
             `${field}.senderSigningKey.private`

@@ -66,16 +66,37 @@ function identityFromCreds(creds: BaileysAuthenticationCreds): IrIdentity {
         advSecretKey: fromBase64(creds.advSecretKey),
         ...(creds.account
             ? {
+                  // creds.json may store `account.*` as raw base64 strings
+                  // instead of `{type:'Buffer',data:...}`; `asBytes` accepts both.
                   signedIdentity: {
-                      ...(creds.account.details ? { details: creds.account.details } : {}),
+                      ...(creds.account.details
+                          ? {
+                                details: asBytes(creds.account.details, 'creds.account.details')
+                            }
+                          : {}),
                       ...(creds.account.accountSignatureKey
-                          ? { accountSignatureKey: creds.account.accountSignatureKey }
+                          ? {
+                                accountSignatureKey: asBytes(
+                                    creds.account.accountSignatureKey,
+                                    'creds.account.accountSignatureKey'
+                                )
+                            }
                           : {}),
                       ...(creds.account.accountSignature
-                          ? { accountSignature: creds.account.accountSignature }
+                          ? {
+                                accountSignature: asBytes(
+                                    creds.account.accountSignature,
+                                    'creds.account.accountSignature'
+                                )
+                            }
                           : {}),
                       ...(creds.account.deviceSignature
-                          ? { deviceSignature: creds.account.deviceSignature }
+                          ? {
+                                deviceSignature: asBytes(
+                                    creds.account.deviceSignature,
+                                    'creds.account.deviceSignature'
+                                )
+                            }
                           : {})
                   }
               }
@@ -130,9 +151,6 @@ function signalIdentitiesFromCreds(creds: BaileysAuthenticationCreds): Map<strin
     const out = new Map<string, Uint8Array>()
     if (!creds.signalIdentities) return out
     for (const id of creds.signalIdentities) {
-        // baileys' `identifier.name` carries the full jid `<user>@<server>`.
-        // Parse + re-key so the IR's signalIdentities map agrees with the key
-        // adapters on the consumer side will produce via `irAddressKey`.
         const addr = parseLibsignalAddress(`${id.identifier.name}:${id.identifier.deviceId}`)
         out.set(irAddressKey(addr), id.identifierKey)
     }
@@ -262,14 +280,17 @@ export function baileysToCanonical(input: BaileysAuthSnapshot): WaSnapshot {
         for (const [encoded, value] of Object.entries(senderKeyDict)) {
             if (!value) continue
             const states = decodeSenderKeyValue(value, `sender-key[${encoded}]`)
-            // baileys keys: `<groupId>::<senderAddrEncoded>` (used historically)
-            // or `<groupJid>::<senderJid>::<senderDevice>`.
-            // We accept both via a permissive split.
-            const sep = encoded.indexOf('::')
-            if (sep < 0) continue
-            const groupId = encoded.slice(0, sep)
-            const rest = encoded.slice(sep + 2)
-            const sender = parseLibsignalAddress(rest)
+            // SenderKeyName.serialize() = `${groupId}::${sender.id}::${deviceId}`.
+            // groupId may contain `@`; sender.id may contain `_<agent>`.
+            const lastSep = encoded.lastIndexOf('::')
+            const firstSep = encoded.indexOf('::')
+            if (lastSep < 0 || firstSep < 0 || firstSep === lastSep) continue
+            const groupId = encoded.slice(0, firstSep)
+            const senderId = encoded.slice(firstSep + 2, lastSep)
+            const deviceStr = encoded.slice(lastSep + 2)
+            const device = Number(deviceStr)
+            if (!Number.isFinite(device)) continue
+            const sender = parseLibsignalAddress(`${senderId}:${device}`)
             const proto = baileysSenderKeyToProto(states, groupId, sender)
             const groupSender = { groupId, sender }
             snap.senderKeys.set(irGroupSenderKey(groupSender), { groupSender, record: { proto } })

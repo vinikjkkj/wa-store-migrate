@@ -1,10 +1,5 @@
-/**
- * Structural types describing baileys' `AuthenticationState` shape after
- * `JSON.parse` with `bufferJsonReviver` (`{type:'Buffer',data:...}` already
- * turned into `Uint8Array`). The adapter does not depend on baileys at runtime.
- *
- * Reference: `baileys/src/Types/Auth.ts`.
- */
+// Mirrors baileys' `AuthenticationState` (see `baileys/src/Types/Auth.ts`)
+// after `JSON.parse` with `bufferJsonReviver`. No runtime dep on baileys.
 import type { BaileysSerializedSenderKey, BaileysSerializedSessionRecord } from './session-types.js'
 
 export type BaileysSessionValue = BaileysSerializedSessionRecord | Uint8Array
@@ -93,18 +88,8 @@ export interface BaileysTcTokenEntry {
     readonly timestamp?: string | number
 }
 
-/**
- * Mirrors `SignalDataSet` in baileys. `pre-key` carries the bare keypair (no
- * keyId — the dict key is the keyId), `app-state-sync-key` is the proto
- * payload.
- *
- * Note on `session` and `sender-key`: baileys' `SignalDataTypeMap` types both
- * as `Uint8Array`, but at runtime the values are libsignal-node's JS object
- * forms (`SessionRecord.serialize()` returns an object) or — for sender-key —
- * UTF-8 bytes of `JSON.stringify(record.serialize())`. The adapter accepts
- * either: the deserialized object (preferred when piping straight from a
- * SignalKeyStore implementation) or `Uint8Array` (raw stored bytes).
- */
+// `session` and `sender-key` accept both libsignal-node's JS object form
+// (what `SignalKeyStore` hands you) and the raw stored `Uint8Array`.
 export interface BaileysSignalDataSet {
     readonly 'pre-key'?: Readonly<Record<string, BaileysKeyPair | null>>
     readonly session?: Readonly<Record<string, BaileysSessionValue | null>>
@@ -120,11 +105,6 @@ export interface BaileysSignalDataSet {
     readonly 'identity-key'?: Readonly<Record<string, Uint8Array | null>>
 }
 
-/**
- * What the user gives the adapter — equivalent to baileys' `AuthenticationState`
- * but as plain data. The user pulls `creds` from their auth-credentials store
- * and dumps every key family from their `SignalKeyStore` into `keys`.
- */
 export interface BaileysAuthSnapshot {
     readonly creds: BaileysAuthenticationCreds
     readonly keys: BaileysSignalDataSet

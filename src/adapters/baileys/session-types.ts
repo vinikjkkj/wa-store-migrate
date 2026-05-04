@@ -1,9 +1,5 @@
-/**
- * libsignal-node `SessionRecord.serialize()` output shape used by baileys.
- * Bytes are accepted as `Uint8Array` (after `bufferJsonReviver`) or base64
- * strings (raw multi-file payload). Reference: `libsignal/src/session_record.js`.
- */
-
+// libsignal-node `SessionRecord.serialize()` output shape (used by baileys).
+// Bytes come as `Uint8Array` after `bufferJsonReviver` or as raw base64 strings.
 export type MaybeSessionBytes = Uint8Array | string
 
 export interface BaileysChainKey {
@@ -58,15 +54,11 @@ export interface BaileysSerializedSessionEntry {
 
 export interface BaileysSerializedSessionRecord {
     readonly _sessions: Readonly<Record<string, BaileysSerializedSessionEntry>>
-    /** Currently always `'v1'` in libsignal-node; widened to `string` for forward-compat. */
+    /** Currently always `'v1'` in libsignal-node; widened for forward-compat. */
     readonly version: string
 }
 
-/**
- * `SenderKeyRecord.serialize()` returns a `SenderKeyStateStructure[]`. Each
- * state is what {@link BaileysSenderKeyStateStructure} below describes.
- * Reference: `baileys/src/Signal/Group/sender-key-record.ts`.
- */
+// `SenderKeyRecord.serialize()` returns `SenderKeyStateStructure[]`.
 export interface BaileysSenderChainKey {
     readonly iteration: number
     readonly seed: MaybeSessionBytes

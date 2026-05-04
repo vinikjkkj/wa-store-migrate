@@ -17,7 +17,9 @@
             "@adapters/whatsmeow": ["./src/adapters/whatsmeow/index.ts"],
             "@adapters/whatsmeow/*": ["./src/adapters/whatsmeow/*"],
             "@adapters/wa-web": ["./src/adapters/wa-web/index.ts"],
-            "@adapters/wa-web/*": ["./src/adapters/wa-web/*"]
+            "@adapters/wa-web/*": ["./src/adapters/wa-web/*"],
+            "@adapters/whatsapp-rust": ["./src/adapters/whatsapp-rust/index.ts"],
+            "@adapters/whatsapp-rust/*": ["./src/adapters/whatsapp-rust/*"]
         },
         "lib": ["ES2022"],
         "strict": true,
@@ -32,6 +34,11 @@
         "resolveJsonModule": true,
         "types": ["node"]
     },
-    "include": ["src"],
-    "exclude": ["dist", "node_modules"]
+    "include": ["src", "examples"],
+    "exclude": [
+        "dist",
+        "node_modules",
+        "examples/whatsmeow-runner",
+        "examples/whatsapp-rust-runner"
+    ]
 }

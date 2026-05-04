@@ -14,6 +14,12 @@ import {
     type WaSnapshot
 } from '@ir'
 
+import {
+    protoToWhatsmeowSenderKeyJson,
+    protoToWhatsmeowSessionJson,
+    whatsmeowSenderKeyJsonToProto,
+    whatsmeowSessionJsonToProto
+} from './go-libsignal-codec.js'
 import type { WhatsmeowSnapshot } from './types.js'
 
 const READ: ReadonlySet<IrDomain> = new Set<IrDomain>([
@@ -107,9 +113,13 @@ export const whatsmeowAdapter: StoreAdapter<WhatsmeowSnapshot, WhatsmeowSnapshot
         if (input.sessions) {
             for (const s of input.sessions) {
                 const addr = parseWhatsmeowAddr(s.addr)
+                // whatsmeow stores sessions as the JSON output of
+                // go.mau.fi/libsignal's struct serializer — convert to proto
+                // bytes for the IR.
+                const proto = whatsmeowSessionJsonToProto(s.session)
                 snap.sessions.set(irAddressKey(addr), {
                     address: addr,
-                    record: { proto: s.session }
+                    record: { proto }
                 })
             }
         }
@@ -118,9 +128,10 @@ export const whatsmeowAdapter: StoreAdapter<WhatsmeowSnapshot, WhatsmeowSnapshot
             for (const sk of input.senderKeys) {
                 const sender = parseWhatsmeowAddr(sk.senderAddr)
                 const groupSender = { groupId: sk.groupId, sender }
+                const proto = whatsmeowSenderKeyJsonToProto(sk.record)
                 snap.senderKeys.set(irGroupSenderKey(groupSender), {
                     groupSender,
-                    record: { proto: sk.record }
+                    record: { proto }
                 })
             }
         }
@@ -233,14 +244,14 @@ export const whatsmeowAdapter: StoreAdapter<WhatsmeowSnapshot, WhatsmeowSnapshot
         if (snap.sessions.size > 0) {
             out.sessions = [...snap.sessions.values()].map(({ address, record }) => ({
                 addr: formatWhatsmeowAddr(address),
-                session: record.proto
+                session: protoToWhatsmeowSessionJson(record.proto)
             }))
         }
         if (snap.senderKeys.size > 0) {
             out.senderKeys = [...snap.senderKeys.values()].map(({ groupSender, record }) => ({
                 groupId: groupSender.groupId,
                 senderAddr: formatWhatsmeowAddr(groupSender.sender),
-                record: record.proto
+                record: protoToWhatsmeowSenderKeyJson(record.proto)
             }))
         }
         if (snap.appStateSyncKeys.size > 0) {

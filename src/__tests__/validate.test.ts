@@ -70,3 +70,36 @@ test('migrate() without validate flag is permissive (does not throw on bad input
     }
     assert.doesNotThrow(() => migrate({ from: zapoAdapter, to: baileysAdapter, data: broken }))
 })
+
+test('validateSnapshot reports registrationId out of 14-bit range', () => {
+    const snap = baileysAdapter.toCanonical(fakeBaileysSnapshot())
+    for (const bad of [-1, 0x4000, 1.5]) {
+        const issues = validateSnapshot({
+            ...snap,
+            identity: { ...snap.identity, registrationId: bad }
+        })
+        const issue = issues.find((i) => i.path === 'identity.registrationId')
+        assert.ok(issue, `regId=${bad} should be flagged`)
+    }
+})
+
+test('validateSnapshot reports wrong signedPreKey.signature size', () => {
+    const snap = baileysAdapter.toCanonical(fakeBaileysSnapshot())
+    const issues = validateSnapshot({
+        ...snap,
+        signedPreKey: { ...snap.signedPreKey, signature: new Uint8Array(60) }
+    })
+    const issue = issues.find((i) => i.path === 'signedPreKey.signature')
+    assert.ok(issue)
+    assert.match(issue.message, /64-byte payload, got 60/)
+})
+
+test('validateSnapshot rejects empty session proto bytes', () => {
+    const snap = baileysAdapter.toCanonical(fakeBaileysSnapshot())
+    const sessions = new Map(snap.sessions)
+    const [firstKey, firstEntry] = [...sessions][0] ?? []
+    assert.ok(firstKey && firstEntry)
+    sessions.set(firstKey, { ...firstEntry, record: { proto: new Uint8Array(0) } })
+    const issues = validateSnapshot({ ...snap, sessions })
+    assert.ok(issues.some((i) => i.path.startsWith('sessions[') && /non-empty/.test(i.message)))
+})

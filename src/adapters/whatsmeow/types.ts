@@ -1,15 +1,6 @@
-/**
- * Canonical JSON dump shape for whatsmeow's `store.Device`. Since whatsmeow is
- * Go, the user produces this from their device using a small Go helper; on
- * the way back the user consumes it to repopulate any `store.Container` impl.
- *
- * Bytes are `Uint8Array` after JSON.parse (snippets in Go emit base64 and the
- * caller is expected to revive). Booleans map straight from Go bools.
- *
- * Reference: `whatsmeow/store/store.go`, `whatsmeow/store/sqlstore/store.go`,
- * `whatsmeow/store/sqlstore/upgrades/*` for column definitions.
- */
-
+// Dump shape for whatsmeow's `store.Device` (the user produces this from Go).
+// Sessions/sender-keys carry the UTF-8 bytes of `go.mau.fi/libsignal`'s JSON
+// serialization — see [./go-libsignal-codec.ts](./go-libsignal-codec.ts).
 export interface WhatsmeowKeyPair {
     readonly pubKey: Uint8Array
     readonly privKey: Uint8Array
@@ -52,7 +43,6 @@ export interface WhatsmeowIdentityKeyRow {
     readonly identityKey: Uint8Array
 }
 
-/** Raw libsignal SessionRecord protobuf bytes (whatsmeow.sessions.session). */
 export interface WhatsmeowSessionRow {
     readonly addr: string
     readonly session: Uint8Array
@@ -60,9 +50,7 @@ export interface WhatsmeowSessionRow {
 
 export interface WhatsmeowSenderKeyRow {
     readonly groupId: string
-    /** `<user>:<device>` */
     readonly senderAddr: string
-    /** Raw libsignal SenderKeyRecord protobuf bytes. */
     readonly record: Uint8Array
 }
 
@@ -112,7 +100,6 @@ export interface WhatsmeowLidMappingRow {
     readonly pn: string
 }
 
-/** What the user produces from `store.Device` and feeds back on import. */
 export interface WhatsmeowSnapshot {
     readonly device: WhatsmeowDeviceRow
     readonly preKeys?: readonly WhatsmeowPreKeyRow[]

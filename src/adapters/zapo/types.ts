@@ -1,12 +1,5 @@
-/**
- * Structural mirror of the data shapes from zapo's stores. The adapter does
- * not depend on `zapo-js` at runtime — the user reads from their stores into
- * this shape and writes from it back into their stores.
- *
- * Reference: `zapo-js/src/store/contracts/*.ts`, `zapo-js/src/auth/types.ts`,
- * `zapo-js/src/signal/types.ts`, `zapo-js/src/appstate/types.ts`.
- */
-
+// Structural mirror of zapo-js store shapes (no runtime dep on zapo-js).
+// See `zapo-js/src/store/contracts/`, `zapo-js/src/auth/types.ts`.
 export interface ZapoKeyPair {
     readonly pubKey: Uint8Array
     readonly privKey: Uint8Array
@@ -119,25 +112,17 @@ export interface ZapoMessageSecret {
     readonly secret: Uint8Array
 }
 
-/**
- * Session/sender-key records as zapo-js's `WaSessionStore.setSession` and
- * `WaSenderKeyStore.upsertSenderKey` expect. The adapter translates these
- * into libsignal proto bytes (and back) using the helpers re-exported from
- * `zapo-js/signal` (`encodeSignalSessionRecord` / `decodeSignalSessionRecord`,
- * `encodeSenderKeyRecord` / `decodeSenderKeyRecord`).
- *
- * Imported from `zapo-js` at runtime — type-only here to avoid a hard dep
- * on internal types.
- */
+// `record` is `SignalSessionRecord` / `SenderKeyRecord` at runtime — opaque
+// here to avoid pinning zapo-js's internal types.
 export interface ZapoSessionEntry {
     readonly address: ZapoSignalAddress
-    readonly record: unknown // SignalSessionRecord at runtime
+    readonly record: unknown
 }
 
 export interface ZapoSenderKeyEntry {
     readonly groupId: string
     readonly sender: ZapoSignalAddress
-    readonly record: unknown // SenderKeyRecord at runtime
+    readonly record: unknown
 }
 
 export interface ZapoStoreSnapshot {

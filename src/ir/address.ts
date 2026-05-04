@@ -1,9 +1,5 @@
-/**
- * Canonical signal address. `user` is the bare LID/PN (no `@s.whatsapp.net`),
- * `device` is the libsignal device id (0 = primary). `agent`/`server` are kept
- * optional because adapters disagree on whether to encode them — when present
- * they round-trip; when absent the consumer assumes the WA defaults.
- */
+// `user` is the bare LID/PN, `device` the libsignal device id (0 = primary).
+// `agent`/`server` are optional — adapters disagree on whether to encode them.
 export interface IrAddress {
     readonly user: string
     readonly device: number

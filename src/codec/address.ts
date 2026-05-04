@@ -1,23 +1,46 @@
 import type { IrAddress } from '@ir/address'
 
+// IR collapses legacy `c.us` (still emitted by wa-web for self/peer JIDs)
+// onto `s.whatsapp.net` — same logical PN identity, every other lib only
+// knows the modern form.
+export const WA_DOMAIN_PN = 's.whatsapp.net'
+export const WA_DOMAIN_LID = 'lid'
+
+export function normalizeWaServer(srv: string): 'lid' | 's.whatsapp.net' | null {
+    if (srv === 'lid') return 'lid'
+    if (srv === 's.whatsapp.net' || srv === 'c.us') return 's.whatsapp.net'
+    return null
+}
+
+export function normalizeWaJid(jid: string): string {
+    const at = jid.lastIndexOf('@')
+    if (at < 0) return jid
+    const srv = jid.slice(at + 1)
+    if (srv === 'c.us') return `${jid.slice(0, at)}@s.whatsapp.net`
+    return jid
+}
+
 /**
- * libsignal address strings used by baileys: `<user>[@<server>][_<agent>]:<device>`.
+ * Parses both libsignal address shapes used across the libs:
+ *   - `<user>[@<server>][_<agent>]:<device>`  (whatsmeow + our own)
+ *   - `<user>[@<server>][_<agent>].<device>`  (libsignal-node, baileys)
  *
- * Examples:
- *   `5511999999999.0:1`           PN, primary device
- *   `5511999999999@lid:2`         LID
- *   `5511999999999_1:1`           with agent (rare)
- *
- * The trailing `.0` group exists in older formats and is stripped.
+ * The `:`/`.` separating `<head>` from `<device>` is identified by its last
+ * occurrence — mid-string `.` or `:` inside `<server>` is OK as long as the
+ * device suffix uses a different delimiter.
  */
 export function parseLibsignalAddress(
     s: string,
     defaults: { server?: 'lid' | 's.whatsapp.net' } = {}
 ): IrAddress {
     const colon = s.lastIndexOf(':')
-    if (colon < 0) throw new SyntaxError(`libsignal address: missing :device in "${s}"`)
-    const head = s.slice(0, colon)
-    const deviceStr = s.slice(colon + 1)
+    const dot = s.lastIndexOf('.')
+    const sep = colon >= 0 ? colon : dot
+    if (sep < 0) {
+        throw new SyntaxError(`libsignal address: missing :device or .device in "${s}"`)
+    }
+    const head = s.slice(0, sep)
+    const deviceStr = s.slice(sep + 1)
     const device = Number(deviceStr)
     if (!Number.isFinite(device) || device < 0) {
         throw new SyntaxError(`libsignal address: bad device "${deviceStr}" in "${s}"`)
@@ -31,9 +54,11 @@ export function parseLibsignalAddress(
     if (at >= 0) {
         const srv = user.slice(at + 1)
         user = user.slice(0, at)
-        if (srv === 'lid') server = 'lid'
-        else if (srv === 's.whatsapp.net') server = 's.whatsapp.net'
-        else throw new SyntaxError(`libsignal address: unknown server "${srv}" in "${s}"`)
+        const normalized = normalizeWaServer(srv)
+        if (normalized === null) {
+            throw new SyntaxError(`libsignal address: unknown server "${srv}" in "${s}"`)
+        }
+        server = normalized
     }
 
     const underscore = user.indexOf('_')
@@ -46,9 +71,6 @@ export function parseLibsignalAddress(
         }
         agent = a
     }
-
-    const dot = user.indexOf('.')
-    if (dot >= 0) user = user.slice(0, dot)
 
     return {
         user,

@@ -1,0 +1,4 @@
+# Cargo build artifacts
+target/
+
+# `Cargo.lock` is intentionally committed (this is a binary crate).

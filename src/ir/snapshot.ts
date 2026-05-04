@@ -1,7 +1,7 @@
 import type { IrAddress, IrGroupSender } from './address.js'
 import type { IrSenderKeyRecord, IrSessionRecord } from './session.js'
 
-export type LibId = 'zapo' | 'baileys' | 'whatsmeow' | 'wa-web'
+export type LibId = 'zapo' | 'baileys' | 'whatsmeow' | 'wa-web' | 'whatsapp-rust'
 
 export interface IrKeyPair {
     readonly pubKey: Uint8Array
@@ -22,11 +22,7 @@ export interface IrPreKey {
     readonly uploaded?: boolean
 }
 
-/**
- * ADV signed-device identity payload (proto.ADVSignedDeviceIdentity bytes,
- * not decoded). All four fields are produced together by the primary device
- * during pairing and required to re-authenticate.
- */
+/** Split fields of `proto.ADVSignedDeviceIdentity`, kept un-decoded. */
 export interface IrSignedIdentity {
     readonly details?: Uint8Array
     readonly accountSignatureKey?: Uint8Array
@@ -38,7 +34,6 @@ export interface IrIdentity {
     readonly noiseKeyPair: IrKeyPair
     readonly signedIdentityKeyPair: IrKeyPair
     readonly registrationId: number
-    /** 32-byte ADV master secret (raw bytes, not base64). */
     readonly advSecretKey: Uint8Array
     readonly signedIdentity?: IrSignedIdentity
     readonly meJid?: string
@@ -101,16 +96,13 @@ export interface IrContact {
 export interface IrMessageSecret {
     readonly messageId: string
     readonly senderJid: string
-    /** Group-scoped messages have a separate chat JID; in 1-on-1 it equals `senderJid`. Optional — zapo does not retain it. */
+    /** Distinct chat JID for group-scoped messages; equals `senderJid` in 1-on-1. */
     readonly chatJid?: string
     readonly secret: Uint8Array
 }
 
-/**
- * Bytes-keyed maps round-trip cleanly only with `string` keys, so binary keys
- * are pre-encoded as their natural string form (libsignal address string for
- * sessions, base64 for keyId-by-bytes maps).
- */
+// Map keys are pre-encoded to strings (libsignal address for sessions,
+// base64 for byte-keyed entries) so the snapshot survives JSON round-trips.
 export interface WaSnapshot {
     readonly schemaVersion: 1
     readonly source: LibId

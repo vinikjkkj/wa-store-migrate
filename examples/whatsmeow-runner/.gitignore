@@ -1,0 +1,6 @@
+# Compiled binary (default name = module name from go.mod)
+wastoremigrate-whatsmeow-runner
+*.exe
+
+# Vendored deps (if anyone runs `go mod vendor`)
+vendor/

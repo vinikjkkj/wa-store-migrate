@@ -110,17 +110,19 @@ function buildSnapshot(
     )
     const localPubKey = ensurePrefixed33(local.identityPubKey, 'local.identityPubKey')
 
-    const sendChain = sendInfo
-        ? {
-              ratchetKey: { pubKey: ratchetPubKey, privKey: ratchetPrivKey },
-              nextMsgIndex: sendInfo.chain.chainKey.counter,
-              chainKey: asBytes(sendInfo.chain.chainKey.key, `${field}.sendChain.key`)
-          }
-        : {
-              ratchetKey: { pubKey: ratchetPubKey, privKey: ratchetPrivKey },
-              nextMsgIndex: 0,
-              chainKey: new Uint8Array(32)
-          }
+    const sendKeyMaterial = sendInfo?.chain.chainKey
+    const sendChain =
+        sendInfo && sendKeyMaterial?.key !== undefined && sendKeyMaterial?.key !== null
+            ? {
+                  ratchetKey: { pubKey: ratchetPubKey, privKey: ratchetPrivKey },
+                  nextMsgIndex: sendKeyMaterial.counter,
+                  chainKey: asBytes(sendKeyMaterial.key, `${field}.sendChain.key`)
+              }
+            : {
+                  ratchetKey: { pubKey: ratchetPubKey, privKey: ratchetPrivKey },
+                  nextMsgIndex: 0,
+                  chainKey: new Uint8Array(32)
+              }
 
     const recvChains: Array<{
         senderRatchetKey?: Uint8Array
@@ -131,6 +133,9 @@ function buildSnapshot(
         if (k === sendChainKey) continue
         const chain = entry._chains[k]
         if (!chain || chain.chainType === CHAIN_TYPE_SENDING) continue
+        // libsignal-node clears `chainKey.key` after ratchet step — the slot
+        // stays for recognition but carries no usable crypto material.
+        if (chain.chainKey?.key === undefined || chain.chainKey?.key === null) continue
         const ratchet = ensurePrefixed33(fromBase64(k), `recvChain[${k}].senderRatchetKey`)
         recvChains.push({
             senderRatchetKey: ratchet,
@@ -142,13 +147,13 @@ function buildSnapshot(
         })
     }
 
-    const aliceBaseKey: Uint8Array | null =
-        entry.indexInfo.baseKeyType === BASE_KEY_TYPE_OURS
-            ? ensurePrefixed33(
-                  asBytes(entry.indexInfo.baseKey, `${field}.indexInfo.baseKey`),
-                  `${field}.indexInfo.baseKey`
-              )
-            : null
+    // The proto's `aliceBaseKey` field stores the X3DH initiator's base
+    // key regardless of role — both sides know it. go.mau.fi/libsignal
+    // requires it populated on both ends.
+    const aliceBaseKey: Uint8Array = ensurePrefixed33(
+        asBytes(entry.indexInfo.baseKey, `${field}.indexInfo.baseKey`),
+        `${field}.indexInfo.baseKey`
+    )
 
     const initialExchangeInfo = entry.pendingPreKey
         ? {
@@ -173,12 +178,9 @@ function buildSnapshot(
     }
 }
 
-/**
- * Converts a baileys serialized session record into libsignal proto bytes
- * (the IR shape). Skipped/out-of-order message keys per chain are dropped
- * — they're stored as raw HKDF seeds in baileys but proto recv chains expect
- * pre-derived `{cipherKey, macKey, iv}` triples.
- */
+// Skipped/out-of-order message keys per chain are dropped on the way out
+// — baileys stores them as raw HKDF seeds, proto expects pre-derived
+// `{cipherKey, macKey, iv}` triples.
 export function baileysSessionToProto(
     serialized: BaileysSerializedSessionRecord,
     local: BaileysSessionLocal
@@ -195,12 +197,7 @@ export function baileysSessionToProto(
         prev.push(buildSnapshot(entry, local, `prevSession[${k}]`))
     }
 
-    // SignalSessionRecord shape — encodeSignalSessionRecord expects this exact
-    // structure (asserted via runtime checks in zapo-js).
-    return encodeSignalSessionRecord({
-        ...main,
-        prevSessions: prev as never
-    })
+    return encodeSignalSessionRecord({ ...main, prevSessions: prev as never })
 }
 
 interface DecodedSnapshot {
@@ -228,7 +225,11 @@ interface DecodedSnapshot {
 function snapshotToBaileysEntry(
     snap: DecodedSnapshot,
     options: { isOpen: boolean; closedAtMs?: number }
-): BaileysSerializedSessionEntry {
+): BaileysSerializedSessionEntry | null {
+    // baileys can't represent a session without a populated sendChain.
+    if (!snap?.sendChain?.ratchetKey?.pubKey || !snap.sendChain.ratchetKey.privKey) {
+        return null
+    }
     const ratchetPub = stripPrefix33(
         snap.sendChain.ratchetKey.pubKey,
         'sendChain.ratchetKey.pubKey'
@@ -267,9 +268,8 @@ function snapshotToBaileysEntry(
         stripPrefix33(snap.remote.pubKey, 'remote.pubKey (used as baseKey fallback)')
     const baseKeyType = snap.aliceBaseKey ? BASE_KEY_TYPE_OURS : BASE_KEY_TYPE_THEIRS
 
-    // libsignal-node convention: open session has `closed === -1`, prev sessions
-    // carry the close timestamp. We don't have that timestamp from the proto,
-    // so prev entries get `closed = options.closedAtMs ?? Date.now() - 1`.
+    // libsignal-node convention: open = `closed === -1`, prev = close ts.
+    // The proto doesn't carry the close ts, so prev entries get a fresh one.
     const now = Date.now()
     const closed = options.isOpen ? -1 : (options.closedAtMs ?? now - 1)
 
@@ -282,10 +282,9 @@ function snapshotToBaileysEntry(
         remoteIdentityKey: snap.remote.pubKey
     }
 
-    // The most recent received ratchet is the head of recvChains (proto order
-    // is highest-index first per libsignal SessionStructure semantics). When
-    // there's no receive chain (X3DH initiator before Bob's first reply) we
-    // fall back to our own send ratchet, matching baileys' constructor.
+    // recvChains[0] is the most recent ratchet (proto order is highest-first).
+    // Fall back to our send ratchet for X3DH initiators before Bob's reply —
+    // matches baileys' own constructor.
     const lastRemote = snap.recvChains[0]?.senderRatchetKey ?? ratchetPub
 
     const currentRatchet: BaileysCurrentRatchet = {
@@ -319,12 +318,9 @@ function snapshotToBaileysEntry(
     return entry
 }
 
-/**
- * Inverse of {@link baileysSessionToProto}. Reconstructs the libsignal-node
- * `_sessions` shape from proto bytes. The `previous → closed` distinction is
- * lost (closed timestamps are not in the proto), so prev entries get
- * `closed: -1, used: 0` — baileys re-prunes them on next access.
- */
+// Empty `_sessions` is a legitimate result — the next PreKey message
+// rebuilds the session. Prev entries get fabricated close timestamps
+// (the proto doesn't carry them); libsignal-node re-prunes on access.
 export function protoToBaileysSession(proto: Uint8Array): BaileysSerializedSessionRecord {
     const record = decodeSignalSessionRecord(proto) as DecodedSnapshot & {
         prevSessions: ReadonlyArray<DecodedSnapshot>
@@ -332,16 +328,15 @@ export function protoToBaileysSession(proto: Uint8Array): BaileysSerializedSessi
     const _sessions: Record<string, BaileysSerializedSessionEntry> = {}
 
     const mainEntry = snapshotToBaileysEntry(record, { isOpen: true })
+    if (!mainEntry) return { _sessions, version: 'v1' }
     const mainKey = toBase64(mainEntry.indexInfo.baseKey as Uint8Array)
     _sessions[mainKey] = mainEntry
 
-    // libsignal-node prunes prev sessions older than 40s of inactivity; we
-    // give them a stable close timestamp slightly older than `now` so the
-    // ordering stays consistent across round-trips.
     const closedBase = Date.now() - 1
     for (let i = 0; i < record.prevSessions.length; i += 1) {
         const prev = record.prevSessions[i]!
         const entry = snapshotToBaileysEntry(prev, { isOpen: false, closedAtMs: closedBase - i })
+        if (!entry) continue
         const key = toBase64(entry.indexInfo.baseKey as Uint8Array)
         if (!(key in _sessions)) _sessions[key] = entry
     }

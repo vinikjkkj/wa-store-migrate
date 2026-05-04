@@ -4,6 +4,7 @@ import { describe, test } from 'node:test'
 import type { StoreAdapter } from '@adapter'
 import { baileysAdapter } from '@adapters/baileys'
 import { waWebAdapter } from '@adapters/wa-web'
+import { whatsappRustAdapter } from '@adapters/whatsapp-rust'
 import { whatsmeowAdapter } from '@adapters/whatsmeow'
 import { zapoAdapter } from '@adapters/zapo'
 import { validateSnapshot } from '@ir/validate'
@@ -12,6 +13,7 @@ import { migrate } from '@migrate'
 import {
     fakeBaileysSnapshot,
     fakeWaWebSnapshot,
+    fakeWhatsappRustSnapshot,
     fakeWhatsmeowSnapshot,
     fakeZapoSnapshot,
     SAMPLE_REGID,
@@ -19,7 +21,7 @@ import {
 } from './fixtures.js'
 
 interface LibCase<T> {
-    readonly id: 'baileys' | 'zapo' | 'whatsmeow' | 'wa-web'
+    readonly id: 'baileys' | 'zapo' | 'whatsmeow' | 'wa-web' | 'whatsapp-rust'
     readonly adapter: StoreAdapter<T, T>
     readonly fixture: () => T
 }
@@ -28,16 +30,18 @@ const LIBS: ReadonlyArray<LibCase<unknown>> = [
     { id: 'baileys', adapter: baileysAdapter, fixture: fakeBaileysSnapshot },
     { id: 'zapo', adapter: zapoAdapter, fixture: fakeZapoSnapshot },
     { id: 'whatsmeow', adapter: whatsmeowAdapter, fixture: fakeWhatsmeowSnapshot },
-    { id: 'wa-web', adapter: waWebAdapter, fixture: fakeWaWebSnapshot }
+    { id: 'wa-web', adapter: waWebAdapter, fixture: fakeWaWebSnapshot },
+    { id: 'whatsapp-rust', adapter: whatsappRustAdapter, fixture: fakeWhatsappRustSnapshot }
 ]
 
 // Domains that adapters cannot write — drops here are expected and the test
 // should not fail on them. Sourced from the adapter `capabilities.write` set.
 const KNOWN_NON_WRITABLE: Readonly<Record<string, ReadonlySet<string>>> = {
     baileys: new Set(['contacts', 'messageSecrets']),
-    'wa-web': new Set(['messageSecrets', 'deviceLists']),
+    'wa-web': new Set(),
     whatsmeow: new Set(['deviceLists']),
-    zapo: new Set()
+    zapo: new Set(),
+    'whatsapp-rust': new Set(['contacts', 'messageSecrets'])
 }
 
 describe('all 12 cross-direction routes', () => {
@@ -119,6 +123,80 @@ describe('round-trip stability per lib', () => {
             assert.equal(snap2.preKeys.size, snap1.preKeys.size)
         })
     }
+})
+
+describe('domains filter', () => {
+    test('domains: ["preKeys"] keeps only preKeys + the two scalars', () => {
+        const {
+            data: out,
+            snapshot,
+            losses
+        } = migrate({
+            from: baileysAdapter,
+            to: zapoAdapter,
+            data: fakeBaileysSnapshot(),
+            domains: ['preKeys']
+        })
+
+        // identity + signedPreKey are always preserved.
+        assert.equal(snapshot.identity.registrationId, SAMPLE_REGID)
+        assert.equal(snapshot.signedPreKey.keyId, 1)
+        assert.ok(snapshot.preKeys.size > 0, 'preKeys should pass through')
+
+        // Every other domain map is empty.
+        assert.equal(snapshot.signalIdentities.size, 0)
+        assert.equal(snapshot.sessions.size, 0)
+        assert.equal(snapshot.senderKeys.size, 0)
+        assert.equal(snapshot.appStateSyncKeys.size, 0)
+        assert.equal(snapshot.appStateVersions.size, 0)
+        assert.equal(snapshot.privacyTokens.size, 0)
+        assert.equal(snapshot.deviceLists.size, 0)
+        assert.equal(snapshot.contacts.size, 0)
+        assert.equal(snapshot.messageSecrets.size, 0)
+
+        // No losses for excluded domains — they were intentionally dropped.
+        for (const l of losses) {
+            assert.ok(
+                ['preKeys', 'identity', 'signedPreKey'].includes(l.domain),
+                `unexpected loss for excluded domain "${l.domain}"`
+            )
+        }
+
+        // Output is a real ZapoStoreSnapshot — just sanity-check it's an object.
+        assert.equal(typeof out, 'object')
+        assert.ok(out !== null)
+    })
+
+    test('domains: ["sessions"] excludes preKeys but keeps sessions intact', () => {
+        const data = fakeBaileysSnapshot()
+        const baseline = migrate({ from: baileysAdapter, to: zapoAdapter, data })
+        const filtered = migrate({
+            from: baileysAdapter,
+            to: zapoAdapter,
+            data,
+            domains: ['sessions']
+        })
+
+        assert.ok(baseline.snapshot.sessions.size > 0, 'fixture provides at least one session')
+        assert.equal(
+            filtered.snapshot.sessions.size,
+            baseline.snapshot.sessions.size,
+            'sessions should pass through unchanged'
+        )
+        assert.equal(filtered.snapshot.preKeys.size, 0, 'preKeys should be excluded')
+        assert.equal(filtered.snapshot.signalIdentities.size, 0)
+    })
+
+    test('omitting domains migrates everything (default behavior)', () => {
+        const baseline = migrate({
+            from: baileysAdapter,
+            to: zapoAdapter,
+            data: fakeBaileysSnapshot()
+        })
+        // Whatever the fixture provides should be present.
+        assert.ok(baseline.snapshot.preKeys.size > 0)
+        assert.ok(baseline.snapshot.sessions.size > 0)
+    })
 })
 
 describe('snapshot validation', () => {

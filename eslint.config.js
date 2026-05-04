@@ -1,7 +1,11 @@
+const path = require('node:path')
+
 const base = require('@vinikjkkj/eslint-config')
 const tsPlugin = require('@typescript-eslint/eslint-plugin')
 const pluginImport = require('eslint-plugin-import')
 const pluginN = require('eslint-plugin-n')
+
+const TSCONFIG = path.resolve(__dirname, 'tsconfig.json')
 
 module.exports = [
     {
@@ -9,6 +13,7 @@ module.exports = [
             'dist/**',
             'coverage/**',
             'node_modules/**',
+            'examples/**',
             '/zapo/**',
             '/baileys/**',
             '/whatsmeow/**',
@@ -21,7 +26,7 @@ module.exports = [
         languageOptions: {
             parserOptions: {
                 tsconfigRootDir: __dirname,
-                project: ['./tsconfig.json']
+                project: [TSCONFIG]
             }
         },
         plugins: {
@@ -44,7 +49,9 @@ module.exports = [
                 typescript: {
                     alwaysTryTypes: true,
                     noWarnOnMultipleProjects: true,
-                    project: ['./tsconfig.json']
+                    // Absolute path so the resolver works regardless of the
+                    // cwd ESLint is launched from (CLI vs VSCode/IDE plugin).
+                    project: [TSCONFIG]
                 }
             }
         },

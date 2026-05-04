@@ -1,14 +1,7 @@
 import type { WaSnapshot } from './snapshot.js'
 
-/**
- * Lightweight invariants we expect of any valid `WaSnapshot`. Adapters can call
- * `validateSnapshot()` after producing a snapshot (or before consuming one) to
- * catch shape/size bugs early — before the data hits the destination store.
- *
- * The checks are deliberately structural, not cryptographic — they catch the
- * classes of bug that come from migration mistakes (wrong key length, swapped
- * pub/priv, missing required fields), not malicious input.
- */
+// Structural-only invariants — catch migration shape/size bugs (wrong key
+// length, swapped pub/priv, missing required fields). Not cryptographic.
 
 export interface ValidationIssue {
     readonly path: string
@@ -65,7 +58,11 @@ export function validateSnapshot(snap: WaSnapshot): readonly ValidationIssue[] {
         id.signedIdentityKeyPair.privKey,
         PRIVKEY_SIZE
     )
-    checkBytes(issues, 'identity.advSecretKey', id.advSecretKey, ADV_SECRET_SIZE)
+    // wa-web wipes advSecretKey after the initial pair-success
+    // (clearADVSecretKey in WAWebCompanionRegUtils) — empty is legitimate.
+    if (id.advSecretKey && id.advSecretKey.length !== 0) {
+        checkBytes(issues, 'identity.advSecretKey', id.advSecretKey, ADV_SECRET_SIZE)
+    }
 
     if (
         !Number.isInteger(id.registrationId) ||

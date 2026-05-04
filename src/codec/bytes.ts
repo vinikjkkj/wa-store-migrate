@@ -1,9 +1,5 @@
-/**
- * Bytes helpers. Adapters consume input that may carry binary data as
- * `Uint8Array`, base64 strings, or `{ type: 'Buffer', data: ... }` objects;
- * the IR is strict `Uint8Array`. These helpers normalize.
- */
-
+// Adapter inputs may carry bytes as `Uint8Array`, base64 string, or
+// `{type:'Buffer',data:...}` JSON. The IR is strict `Uint8Array`.
 export type MaybeBytes =
     | Uint8Array
     | string
@@ -38,10 +34,8 @@ export function fromBase64(s: string): Uint8Array {
     return new Uint8Array(Buffer.from(s, 'base64'))
 }
 
-/**
- * libsignal Curve25519 pubkeys are 33 bytes with a 0x05 type prefix.
- * Some serializers strip the prefix; restore it when needed.
- */
+// libsignal Curve25519 pubkeys carry a `0x05` type prefix. Some serializers
+// strip it — these helpers restore/strip on demand.
 export function ensurePrefixed33(input: Uint8Array, field: string): Uint8Array {
     if (input.length === 33) return input
     if (input.length === 32) {

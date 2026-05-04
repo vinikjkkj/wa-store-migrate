@@ -1,10 +1,16 @@
+import { proto } from 'zapo-js/proto'
 import { encodeSenderKeyRecord, encodeSignalSessionRecord } from 'zapo-js/signal'
 
 import type { BaileysAuthSnapshot } from '@adapters/baileys'
 import { protoToBaileysSenderKey } from '@adapters/baileys/sender-key'
 import { protoToBaileysSession } from '@adapters/baileys/session'
 import type { WaWebSnapshot } from '@adapters/wa-web'
+import type { WhatsappRustSnapshot } from '@adapters/whatsapp-rust'
 import type { WhatsmeowSnapshot } from '@adapters/whatsmeow'
+import {
+    protoToWhatsmeowSenderKeyJson,
+    protoToWhatsmeowSessionJson
+} from '@adapters/whatsmeow/go-libsignal-codec'
 import type { ZapoStoreSnapshot } from '@adapters/zapo'
 
 export function fb(b: number, len: number): Uint8Array {
@@ -212,9 +218,17 @@ export function fakeWhatsmeowSnapshot(): WhatsmeowSnapshot {
             { keyId: 1, keyPair: { pubKey: fb(0x61, 32), privKey: fb(0x62, 32) }, uploaded: true }
         ],
         identities: [{ addr: '5511888888888:0', identityKey: pub33(0x20) }],
-        sessions: [{ addr: '5511888888888:0', session: SESSION_BYTES }],
+        // whatsmeow persists sessions/sender-keys as the UTF-8 bytes of
+        // go.mau.fi/libsignal's JSON struct serializer, NOT raw libsignal proto.
+        sessions: [
+            { addr: '5511888888888:0', session: protoToWhatsmeowSessionJson(SESSION_BYTES) }
+        ],
         senderKeys: [
-            { groupId: SAMPLE_GROUP_ID, senderAddr: '5511999999999:0', record: SENDER_KEY_BYTES }
+            {
+                groupId: SAMPLE_GROUP_ID,
+                senderAddr: '5511999999999:0',
+                record: protoToWhatsmeowSenderKeyJson(SENDER_KEY_BYTES)
+            }
         ],
         contacts: [{ jid: '5511555555555@s.whatsapp.net', fullName: 'Friend', pushName: 'Pal' }],
         privacyTokens: [
@@ -269,7 +283,99 @@ export function fakeWaWebSnapshot(): WaWebSnapshot {
         privacyTokens: [
             { jid: '5511777777777@s.whatsapp.net', token: fb(0x99, 32), timestampMs: 1700000123000 }
         ],
-        contacts: [{ jid: '5511555555555@s.whatsapp.net', displayName: 'Friend' }]
+        contacts: [{ jid: '5511555555555@s.whatsapp.net', displayName: 'Friend' }],
+        appStateSyncKeys: [{ keyId: fb(0xde, 4), keyData: fb(0xee, 32), timestamp: 1700000000 }],
+        appStateVersions: [
+            {
+                collection: 'critical_block',
+                version: 7,
+                hash: fb(0xbb, 128),
+                indexValueMap: { [Buffer.from(fb(0x01, 8)).toString('base64')]: fb(0xcc, 32) }
+            }
+        ],
+        deviceLists: [
+            {
+                userJid: '5511666666666@s.whatsapp.net',
+                deviceIds: [0, 1, 2],
+                timestampMs: 1700001000000
+            }
+        ],
+        messageSecrets: [
+            {
+                messageId: 'MSG-1',
+                senderJid: SAMPLE_USER_JID,
+                chatJid: SAMPLE_GROUP_ID,
+                secret: fb(0xff, 32)
+            }
+        ]
+    }
+}
+
+export function fakeWhatsappRustSnapshot(): WhatsappRustSnapshot {
+    // rust packs the four ADV identity fields into one proto blob.
+    const accountBytes = new Uint8Array(
+        proto.ADVSignedDeviceIdentity.encode({
+            details: fb(0x01, 8),
+            accountSignatureKey: fb(0xa1, 32),
+            accountSignature: fb(0xa2, 64),
+            deviceSignature: fb(0xa3, 64)
+        }).finish()
+    )
+    return {
+        device: {
+            registrationId: SAMPLE_REGID,
+            noiseKey: { pubKey: fb(0x11, 32), privKey: fb(0x12, 32) },
+            identityKey: { pubKey: fb(0x10, 32), privKey: fb(0x32, 32) },
+            signedPreKey: { pubKey: fb(0x41, 32), privKey: fb(0x42, 32) },
+            signedPreKeyId: 1,
+            signedPreKeySignature: fb(0x51, 64),
+            advSecretKey: fb(0xab, 32),
+            account: accountBytes,
+            pn: SAMPLE_USER_JID,
+            lid: '11111@lid',
+            pushName: 'Tester',
+            edgeRoutingInfo: fb(0x05, 2)
+        },
+        preKeys: [
+            { keyId: 1, keyPair: { pubKey: fb(0x61, 32), privKey: fb(0x62, 32) }, uploaded: true }
+        ],
+        identities: [{ address: '5511888888888@s.whatsapp.net.0', key: pub33(0x20) }],
+        sessions: [{ address: '5511888888888@s.whatsapp.net.0', record: SESSION_BYTES }],
+        senderKeys: [
+            {
+                address: `${SAMPLE_GROUP_ID}:5511999999999@s.whatsapp.net.0`,
+                record: SENDER_KEY_BYTES
+            }
+        ],
+        tcTokens: [
+            {
+                jid: '5511777777777@s.whatsapp.net',
+                token: fb(0x99, 32),
+                tokenTimestamp: 1700000123
+            }
+        ],
+        appStateKeys: [{ keyId: fb(0xde, 4), keyData: fb(0xee, 32) }],
+        appStateVersions: [
+            {
+                name: 'critical_block',
+                stateData: new Uint8Array([7, ...new Array<number>(128).fill(0xbb), 0])
+            }
+        ],
+        appStateMutationMacs: [
+            {
+                name: 'critical_block',
+                version: 7,
+                indexMac: fb(0x01, 8),
+                valueMac: fb(0xcc, 32)
+            }
+        ],
+        deviceRegistry: [
+            {
+                userJid: '5511666666666@s.whatsapp.net',
+                devicesJson: JSON.stringify([{ id: 0 }, { id: 1 }, { id: 2 }]),
+                timestamp: 1700001000
+            }
+        ]
     }
 }
 

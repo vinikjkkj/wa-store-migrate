@@ -1,8 +1,17 @@
+# Symlinks to source libs (per-developer)
 /baileys
 /zapo
 /whatsmeow
 /wa-web
+/whatsapp-rust
+
+# Build / package output
 node_modules
 dist
 coverage
-examples
+
+# Per-developer state
+.auth
+.claude
+
+# Native runner build artifacts are ignored via each runner's own .gitignore.

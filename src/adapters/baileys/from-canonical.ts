@@ -32,8 +32,8 @@ function credsFromSnapshot(snap: WaSnapshot): BaileysAuthenticationCreds {
     const { firstUnuploadedPreKeyId, nextPreKeyId: nextId } = nextPreKeyId(snap)
     const creds: BaileysAuthenticationCreds = {
         noiseKey: { public: id.noiseKeyPair.pubKey, private: id.noiseKeyPair.privKey },
-        // baileys requires this field; it gets regenerated on next pairing flow
-        // and is not load-bearing for already-authenticated sessions.
+        // Required field; not load-bearing once authenticated — regenerated on
+        // any future re-pair.
         pairingEphemeralKeyPair: { public: new Uint8Array(32), private: new Uint8Array(32) },
         signedIdentityKey: {
             public: id.signedIdentityKeyPair.pubKey,
@@ -75,10 +75,8 @@ function credsFromSnapshot(snap: WaSnapshot): BaileysAuthenticationCreds {
         ...(snap.signalIdentities.size > 0
             ? {
                   signalIdentities: [...snap.signalIdentities].map(([key, identifierKey]) => {
-                      // The IR key carries `<user>[@<server>][_<agent>]:<device>`
-                      // (irAddressKey output). baileys' identifier.name expects
-                      // `<user>@<server>` — drop agent if present, default to
-                      // `s.whatsapp.net` when no server (PN identities).
+                      // IR key shape `<user>[@<server>][_<agent>]:<device>`
+                      // → baileys `identifier.name = <user>@<server>` (no agent).
                       const colon = key.lastIndexOf(':')
                       const head = colon >= 0 ? key.slice(0, colon) : key
                       const deviceId = colon >= 0 ? Number(key.slice(colon + 1)) : 0
@@ -133,8 +131,15 @@ function keysFromSnapshot(snap: WaSnapshot): BaileysSignalDataSet {
     if (snap.senderKeys.size > 0) {
         const dict: Record<string, unknown> = {}
         for (const { groupSender, record } of snap.senderKeys.values()) {
-            const senderEncoded = toLibsignalAddress(groupSender.sender)
-            const key = `${groupSender.groupId}::${senderEncoded}`
+            // SenderKeyName.serialize() = `${groupId}::${sender.id}::${deviceId}`.
+            // sender.id carries any `_<agent>` and `@<server>` suffix; device
+            // is its own segment.
+            const senderId =
+                (groupSender.sender.server
+                    ? `${groupSender.sender.user}@${groupSender.sender.server}`
+                    : groupSender.sender.user) +
+                (groupSender.sender.agent !== undefined ? `_${groupSender.sender.agent}` : '')
+            const key = `${groupSender.groupId}::${senderId}::${groupSender.sender.device}`
             dict[key] = protoToBaileysSenderKey(
                 record.proto,
                 groupSender.groupId,
