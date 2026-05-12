@@ -32,8 +32,17 @@ export {
 } from '@ir'
 export type { ValidationIssue } from '@ir'
 
-export type { LossReportEntry, MigrateArgs, MigrateResult } from '@migrate'
+export type {
+    AdapterRef,
+    LossReportEntry,
+    MigrateArgs,
+    MigrateArgsByLib,
+    MigrateResult
+} from '@migrate'
 export { migrate, planLosses } from '@migrate'
+
+export type { LibInput, LibOutput, LibShapeMap } from '@adapters/registry'
+export { ADAPTERS } from '@adapters/registry'
 
 export {
     asBytes,

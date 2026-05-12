@@ -1,5 +1,6 @@
 import { ALL_DOMAINS, type IrDomain, type StoreAdapter } from '@adapter'
-import { emptySnapshot, type WaSnapshot, type WaSnapshotMutable } from '@ir'
+import { ADAPTERS, type LibInput, type LibOutput } from '@adapters/registry'
+import { emptySnapshot, type LibId, type WaSnapshot, type WaSnapshotMutable } from '@ir'
 import { assertValidSnapshot } from '@ir/validate'
 
 export interface LossReportEntry {
@@ -15,9 +16,12 @@ export interface MigrateResult<TOut> {
     readonly losses: readonly LossReportEntry[]
 }
 
+/** Reference to an adapter: either its `LibId` string or the adapter object. */
+export type AdapterRef<TIn = unknown, TOut = unknown> = LibId | StoreAdapter<TIn, TOut>
+
 export interface MigrateArgs<TIn, TOut> {
-    readonly from: StoreAdapter<TIn, unknown>
-    readonly to: StoreAdapter<unknown, TOut>
+    readonly from: AdapterRef<TIn, unknown>
+    readonly to: AdapterRef<unknown, TOut>
     readonly data: TIn
     /** Run `assertValidSnapshot()` on the canonical snapshot. Off by default. */
     readonly validate?: boolean
@@ -28,6 +32,18 @@ export interface MigrateArgs<TIn, TOut> {
      * from the snapshot and omitted from the `losses` report.
      */
     readonly domains?: readonly IrDomain[]
+}
+
+export interface MigrateArgsByLib<LFrom extends LibId, LTo extends LibId> {
+    readonly from: LFrom
+    readonly to: LTo
+    readonly data: LibInput<LFrom>
+    readonly validate?: boolean
+    readonly domains?: readonly IrDomain[]
+}
+
+function asAdapter<TIn, TOut>(ref: AdapterRef<TIn, TOut>): StoreAdapter<TIn, TOut> {
+    return typeof ref === 'string' ? (ADAPTERS[ref] as unknown as StoreAdapter<TIn, TOut>) : ref
 }
 
 const SCALAR_DOMAINS: ReadonlySet<IrDomain> = new Set(['identity', 'signedPreKey'])
@@ -66,37 +82,45 @@ function filterSnapshot(snapshot: WaSnapshot, keep: ReadonlySet<IrDomain>): WaSn
 }
 
 export function planLosses(
-    from: StoreAdapter<unknown, unknown>,
-    to: StoreAdapter<unknown, unknown>,
+    from: AdapterRef,
+    to: AdapterRef,
     snapshot: WaSnapshot
 ): readonly LossReportEntry[] {
+    const fromAdapter = asAdapter(from)
+    const toAdapter = asAdapter(to)
     const losses: LossReportEntry[] = []
     for (const d of ALL_DOMAINS) {
         const count = domainCount(snapshot, d)
         if (count === 0) continue
-        if (!to.capabilities.write.has(d)) {
+        if (!toAdapter.capabilities.write.has(d)) {
             losses.push({
                 domain: d,
                 severity: 'drop',
                 count,
-                reason: `${to.id} adapter cannot write ${d}`
+                reason: `${toAdapter.id} adapter cannot write ${d}`
             })
             continue
         }
-        if (from.capabilities.lossy?.has(d) || to.capabilities.lossy?.has(d)) {
+        if (fromAdapter.capabilities.lossy?.has(d) || toAdapter.capabilities.lossy?.has(d)) {
             losses.push({
                 domain: d,
                 severity: 'warn',
                 count,
-                reason: `${d} round-trip is lossy between ${from.id} and ${to.id}`
+                reason: `${d} round-trip is lossy between ${fromAdapter.id} and ${toAdapter.id}`
             })
         }
     }
     return losses
 }
 
-export function migrate<TIn, TOut>(args: MigrateArgs<TIn, TOut>): MigrateResult<TOut> {
-    const fullSnapshot = args.from.toCanonical(args.data)
+export function migrate<LFrom extends LibId, LTo extends LibId>(
+    args: MigrateArgsByLib<LFrom, LTo>
+): MigrateResult<LibOutput<LTo>>
+export function migrate<TIn, TOut>(args: MigrateArgs<TIn, TOut>): MigrateResult<TOut>
+export function migrate(args: MigrateArgs<unknown, unknown>): MigrateResult<unknown> {
+    const fromAdapter = asAdapter(args.from)
+    const toAdapter = asAdapter(args.to)
+    const fullSnapshot = fromAdapter.toCanonical(args.data)
     if (args.validate) assertValidSnapshot(fullSnapshot)
     const snapshot = args.domains
         ? filterSnapshot(
@@ -104,7 +128,7 @@ export function migrate<TIn, TOut>(args: MigrateArgs<TIn, TOut>): MigrateResult<
               new Set<IrDomain>([...args.domains, 'identity', 'signedPreKey'])
           )
         : fullSnapshot
-    const losses = planLosses(args.from, args.to, snapshot)
-    const data = args.to.fromCanonical(snapshot)
+    const losses = planLosses(fromAdapter, toAdapter, snapshot)
+    const data = toAdapter.fromCanonical(snapshot)
     return { data, snapshot, losses }
 }

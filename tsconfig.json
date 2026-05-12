@@ -19,7 +19,8 @@
             "@adapters/wa-web": ["./src/adapters/wa-web/index.ts"],
             "@adapters/wa-web/*": ["./src/adapters/wa-web/*"],
             "@adapters/whatsapp-rust": ["./src/adapters/whatsapp-rust/index.ts"],
-            "@adapters/whatsapp-rust/*": ["./src/adapters/whatsapp-rust/*"]
+            "@adapters/whatsapp-rust/*": ["./src/adapters/whatsapp-rust/*"],
+            "@adapters/registry": ["./src/adapters/registry.ts"]
         },
         "lib": ["ES2022"],
         "strict": true,
