@@ -3,6 +3,37 @@
     "version": "0.1.0",
     "description": "Universal store migrator for WhatsApp libraries (zapo, baileys, whatsmeow, wa-web, whatsapp-rust)",
     "license": "MIT",
+    "author": {
+        "name": "vinikjkkj",
+        "email": "viniwarrior4@gmail.com",
+        "url": "https://github.com/vinikjkkj"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/vinikjkkj/wa-store-migrate.git"
+    },
+    "bugs": {
+        "url": "https://github.com/vinikjkkj/wa-store-migrate/issues"
+    },
+    "homepage": "https://github.com/vinikjkkj/wa-store-migrate#readme",
+    "funding": {
+        "type": "github",
+        "url": "https://github.com/sponsors/vinikjkkj"
+    },
+    "keywords": [
+        "whatsapp",
+        "baileys",
+        "zapo",
+        "whatsmeow",
+        "whatsapp-web",
+        "whatsapp-rust",
+        "signal-protocol",
+        "libsignal",
+        "migration",
+        "session",
+        "multidevice",
+        "auth-state"
+    ],
     "main": "dist/cjs/index.js",
     "module": "dist/esm/index.js",
     "types": "dist/types/index.d.ts",
