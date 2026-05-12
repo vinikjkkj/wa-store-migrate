@@ -44,6 +44,25 @@ export { migrate, planLosses } from '@migrate'
 export type { LibInput, LibOutput, LibShapeMap } from '@adapters/registry'
 export { ADAPTERS } from '@adapters/registry'
 
+export type { WaSnapshotJson } from '@api'
+export { snapshot } from '@api'
+export type {
+    IrAppStateSyncKeyJson,
+    IrIdentityJson,
+    IrKeyPairJson,
+    IrLTHashStateJson,
+    IrMessageSecretJson,
+    IrPreKeyJson,
+    IrPrivacyTokenJson,
+    IrSenderKeyDistributionJson,
+    IrSenderKeyRecordJson,
+    IrSessionRecordJson,
+    IrSignedIdentityJson,
+    IrSignedPreKeyJson
+} from '@ir/json'
+export type { BuildSnapshotInit, SnapshotBuilder } from '@ir/builder'
+export { buildSnapshot } from '@ir/builder'
+
 export {
     asBytes,
     asOptionalBytes,

@@ -40,15 +40,14 @@ import (
 )
 
 type dumpKeyPair struct {
-	Pub  string `json:"pub"`
-	Priv string `json:"priv"`
+	Pub  string `json:"pubKey"`
+	Priv string `json:"privKey"`
 }
 
 type dumpSignedPreKey struct {
-	KeyID     uint32 `json:"keyId"`
-	Pub       string `json:"pub"`
-	Priv      string `json:"priv"`
-	Signature string `json:"signature"`
+	KeyID     uint32      `json:"keyId"`
+	KeyPair   dumpKeyPair `json:"keyPair"`
+	Signature string      `json:"signature"`
 }
 
 type dumpAccount struct {
@@ -59,25 +58,22 @@ type dumpAccount struct {
 }
 
 type dumpDevice struct {
-	RegistrationID  uint32           `json:"registrationId"`
-	NoiseKeyPub     string           `json:"noiseKeyPub"`
-	NoiseKeyPriv    string           `json:"noiseKeyPriv"`
-	IdentityKeyPub  string           `json:"identityKeyPub"`
-	IdentityKeyPriv string           `json:"identityKeyPriv"`
-	SignedPreKey    dumpSignedPreKey `json:"signedPreKey"`
-	AdvSecretKey    string           `json:"advSecretKey"`
-	Account         *dumpAccount     `json:"account"`
-	MeJid           string           `json:"meJid"`
-	MeLid           string           `json:"meLid"`
-	Platform        string           `json:"platform"`
-	PushName        string           `json:"pushName"`
+	RegistrationID uint32           `json:"registrationId"`
+	NoiseKey       dumpKeyPair      `json:"noiseKey"`
+	IdentityKey    dumpKeyPair      `json:"identityKey"`
+	SignedPreKey   dumpSignedPreKey `json:"signedPreKey"`
+	AdvSecretKey   string           `json:"advSecretKey"`
+	Account        *dumpAccount     `json:"account,omitempty"`
+	MeJid          string           `json:"meJid,omitempty"`
+	MeLid          string           `json:"meLid,omitempty"`
+	Platform       string           `json:"platform,omitempty"`
+	PushName       string           `json:"pushName,omitempty"`
 }
 
 type dumpPreKey struct {
-	KeyID    uint32 `json:"keyId"`
-	Pub      string `json:"pub"`
-	Priv     string `json:"priv"`
-	Uploaded bool   `json:"uploaded"`
+	KeyID    uint32      `json:"keyId"`
+	KeyPair  dumpKeyPair `json:"keyPair"`
+	Uploaded bool        `json:"uploaded"`
 }
 
 type dumpIdentity struct {
@@ -260,17 +256,17 @@ func main() {
 
 	device.RegistrationID = d.Device.RegistrationID
 	device.NoiseKey = &keys.KeyPair{
-		Pub:  decodeArr32(d.Device.NoiseKeyPub),
-		Priv: decodeArr32(d.Device.NoiseKeyPriv),
+		Pub:  decodeArr32(d.Device.NoiseKey.Pub),
+		Priv: decodeArr32(d.Device.NoiseKey.Priv),
 	}
 	device.IdentityKey = &keys.KeyPair{
-		Pub:  decodeArr32(d.Device.IdentityKeyPub),
-		Priv: decodeArr32(d.Device.IdentityKeyPriv),
+		Pub:  decodeArr32(d.Device.IdentityKey.Pub),
+		Priv: decodeArr32(d.Device.IdentityKey.Priv),
 	}
 	device.SignedPreKey = &keys.PreKey{
 		KeyPair: keys.KeyPair{
-			Pub:  decodeArr32(d.Device.SignedPreKey.Pub),
-			Priv: decodeArr32(d.Device.SignedPreKey.Priv),
+			Pub:  decodeArr32(d.Device.SignedPreKey.KeyPair.Pub),
+			Priv: decodeArr32(d.Device.SignedPreKey.KeyPair.Priv),
 		},
 		KeyID:     d.Device.SignedPreKey.KeyID,
 		Signature: decodeArr64(d.Device.SignedPreKey.Signature),
@@ -447,8 +443,8 @@ func waitForSignal() chan os.Signal {
 // a put for an arbitrary keyId, so we hit the schema (`whatsmeow_pre_keys`)
 // directly. The schema is: jid, key_id, key (priv), uploaded.
 func insertPreKey(db *sql.DB, deviceJID *types.JID, pk dumpPreKey) {
-	priv := decode(pk.Priv)
-	pub := decode(pk.Pub)
+	priv := decode(pk.KeyPair.Priv)
+	pub := decode(pk.KeyPair.Pub)
 	if len(priv) != 32 || len(pub) != 32 {
 		fmt.Printf("    preKey %d skipped: bad key length\n", pk.KeyID)
 		return

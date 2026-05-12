@@ -23,8 +23,7 @@ import { createSqliteStore } from '@zapo-js/store-sqlite'
 
 import { WaClient, createPinoLogger, createStore, type LogLevel } from 'zapo-js'
 
-import { waWebAdapter, type WaWebSnapshot } from '@adapters/wa-web'
-import { zapoAdapter } from '@adapters/zapo'
+import type { WaWebSnapshot } from '@adapters/wa-web'
 import { bufferJsonReviver } from '@codec/buffer-json'
 import { migrate } from '@migrate'
 
@@ -59,8 +58,8 @@ async function main(): Promise<void> {
 
     console.log('[step 1] wa-web → zapo conversion…')
     const { data: zapoData, losses } = migrate({
-        from: waWebAdapter,
-        to: zapoAdapter,
+        from: 'wa-web',
+        to: 'zapo',
         data: dump,
         validate: false
     })

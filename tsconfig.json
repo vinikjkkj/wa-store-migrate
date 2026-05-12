@@ -5,6 +5,7 @@
         "moduleResolution": "NodeNext",
         "paths": {
             "@adapter": ["./src/adapter.ts"],
+            "@api": ["./src/api.ts"],
             "@migrate": ["./src/migrate.ts"],
             "@ir": ["./src/ir/index.ts"],
             "@ir/*": ["./src/ir/*"],

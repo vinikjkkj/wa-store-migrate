@@ -24,8 +24,8 @@ import { dirname, resolve, join } from 'node:path'
 
 import Database from 'better-sqlite3'
 
-import { waWebAdapter, type WaWebSnapshot } from '@adapters/wa-web'
-import { whatsappRustAdapter, type WhatsappRustSnapshot } from '@adapters/whatsapp-rust'
+import type { WaWebSnapshot } from '@adapters/wa-web'
+import type { WhatsappRustSnapshot } from '@adapters/whatsapp-rust'
 import { bufferJsonReviver } from '@codec/buffer-json'
 import { migrate } from '@migrate'
 
@@ -241,8 +241,8 @@ async function main(): Promise<void> {
 
     console.log('[1] migrating wa-web → whatsapp-rust …')
     const { data: rustSnap, losses } = migrate({
-        from: waWebAdapter,
-        to: whatsappRustAdapter,
+        from: 'wa-web',
+        to: 'whatsapp-rust',
         data: dump,
         validate: false
     })

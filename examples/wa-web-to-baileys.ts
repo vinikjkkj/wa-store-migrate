@@ -14,8 +14,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { baileysAdapter, type BaileysAuthSnapshot } from '@adapters/baileys'
-import { waWebAdapter, type WaWebSnapshot } from '@adapters/wa-web'
+import type { WaWebSnapshot } from '@adapters/wa-web'
 import { bufferJsonReplacer, bufferJsonReviver } from '@codec/buffer-json'
 import { migrate } from '@migrate'
 
@@ -43,8 +42,8 @@ async function main(): Promise<void> {
     }
 
     const { data: out, losses } = migrate({
-        from: waWebAdapter,
-        to: baileysAdapter,
+        from: 'wa-web',
+        to: 'baileys',
         data: dump,
         validate: false
     })
