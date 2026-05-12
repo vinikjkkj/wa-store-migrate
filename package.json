@@ -88,6 +88,7 @@
         "build:esm": "tsc -p tsconfig.esm.json && tsc-alias -p tsconfig.esm.json --resolve-full-paths && node -e \"require('node:fs').writeFileSync('dist/esm/package.json', '{\\\"type\\\":\\\"module\\\"}\\n')\"",
         "build:types": "tsc -p tsconfig.types.json && tsc-alias -p tsconfig.types.json --resolve-full-paths",
         "build": "npm run clean && npm run build:cjs && npm run build:esm && npm run build:types",
+        "prepublishOnly": "npm run build && npm test",
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "node --import tsx --test \"src/**/__tests__/**/*.test.ts\"",
         "test:watch": "node --import tsx --test --watch \"src/**/__tests__/**/*.test.ts\"",
