@@ -28,20 +28,76 @@ npm i wa-store-migrate
 ## Quick start
 
 ```ts
-import { baileysAdapter, zapoAdapter, migrate } from 'wa-store-migrate'
+import { snapshot } from 'wa-store-migrate'
 
 // 1. Build the source-shaped object (see Recipes below for per-lib readers)
 const baileysAuth = await readBaileysAuthState('.auth/baileys')
 
-// 2. Convert
-const { data, losses } = migrate({
-    from: baileysAdapter,
-    to: zapoAdapter,
-    data: baileysAuth
-})
+// 2. Convert: source-lib → IR → destination-lib
+const zapoData = snapshot.to('zapo', snapshot.from('baileys', baileysAuth))
 
 // 3. Persist to your destination store (see Recipes below for per-lib writers)
-await writeZapoSnapshot('.auth/zapo.sqlite', data)
+await writeZapoSnapshot('.auth/zapo.sqlite', zapoData)
+```
+
+Need a loss report? Use `migrate` instead — same inputs, returns
+`{ data, snapshot, losses }`:
+
+```ts
+import { migrate } from 'wa-store-migrate'
+
+const { data, losses } = migrate({ from: 'baileys', to: 'zapo', data: baileysAuth })
+```
+
+Both `'baileys' | 'zapo' | 'whatsmeow' | 'wa-web' | 'whatsapp-rust'` strings
+and the adapter objects (`baileysAdapter`, etc.) are accepted everywhere.
+
+## Working with the IR directly (custom storage backends)
+
+If your auth state lives in MySQL / Postgres / Redis / MongoDB instead of one
+of the supported libs' default formats, the **IR (`WaSnapshot`)** is your
+interface. Read your store, build an IR, hand it to any adapter.
+
+```ts
+import { snapshot } from 'wa-store-migrate'
+
+// MySQL → IR JSON → write to your DB
+const ir = snapshot.from('baileys', state)
+await redis.set(`wa:${userId}`, JSON.stringify(snapshot.toJSON(ir)))
+
+// Read from your DB → IR → any destination lib
+const ir2 = snapshot.fromJSON(JSON.parse(await redis.get(`wa:${userId}`)))
+const zapoData = snapshot.to('zapo', ir2)
+
+// Or construct IR from scratch (e.g. mapping arbitrary DB rows)
+const built = snapshot
+    .build({ source: 'pg', identity, signedPreKey })
+    .addSessions(rows.map((r) => ({ address: r.addr, record: { proto: r.bytes } })))
+    .addPreKeys(preKeyRows)
+    .build()
+```
+
+`snapshot.toJSON()` produces a portable, JSON-serializable form (no Map,
+no Uint8Array — Maps become `[key, value]` pairs, bytes become base64
+strings). Stable across versions via `schemaVersion`. See
+[`docs/IR.md`](docs/IR.md) for the full spec.
+
+### Cross-language consumers (Go / Rust)
+
+`docs/IR.md` is the contract for non-TS readers. A Go/Rust service can
+read the JSON produced by `snapshot.toJSON()` directly:
+
+```ts
+// Node: serialize to portable IR JSON
+const ir = snapshot.from('baileys', state)
+fs.writeFileSync('ir.json', JSON.stringify(snapshot.toJSON(ir)))
+```
+
+```go
+// Go: declare structs matching docs/IR.md and decode
+var ir IRSnapshot
+json.Unmarshal(data, &ir)
+// ...populate your store
 ```
 
 ## Recipes
@@ -468,16 +524,21 @@ population and `bincode::HashState` encoding.
 
 ```ts
 import {
-    // Adapters
+    // High-level namespace — covers 90% of use cases
+    snapshot, // { from, to, toJSON, fromJSON, build }
+    buildSnapshot, // standalone alias for snapshot.build
+
+    // Migration with loss report
+    migrate, // { from, to, data } → { data, snapshot, losses }
+    planLosses,
+
+    // Adapters (advanced — string LibIds work everywhere)
     baileysAdapter,
     zapoAdapter,
     whatsmeowAdapter,
     waWebAdapter,
     whatsappRustAdapter,
-
-    // Migration
-    migrate,
-    planLosses,
+    ADAPTERS, // string → adapter map
 
     // Validation
     validateSnapshot,
@@ -495,8 +556,12 @@ import {
 
     // IR types
     type WaSnapshot,
+    type WaSnapshotJson,
     type IrAddress,
     type IrIdentity,
+    type LibId,
+    type LibInput,
+    type LibOutput,
     type StoreAdapter,
     type AdapterCapabilities,
     type IrDomain
@@ -508,12 +573,11 @@ sockets, or holds global state. The user owns I/O — both reading the source
 state into the adapter shape and persisting the result on the destination
 side.
 
-## Custom stores
+## Custom adapters
 
-Each lib can have user-provided custom stores. Since adapters operate on
-plain data shapes (not store interfaces), a custom store works as long as
-the user can dump it to / load it from the documented snapshot shape. The
-adapter contract is:
+You can register a new lib by implementing the `StoreAdapter` contract.
+Since adapters operate on plain data shapes (not store interfaces), no
+I/O is required. The contract:
 
 ```ts
 interface StoreAdapter<TIn, TOut = TIn> {
