@@ -1,4 +1,5 @@
 import type { AdapterCapabilities, IrDomain, StoreAdapter } from '@adapter'
+import { coerceBufferJson } from '@codec/buffer-json'
 import type { WaSnapshot } from '@ir'
 
 import { baileysFromCanonical } from './from-canonical.js'
@@ -45,7 +46,11 @@ export const baileysAdapter: StoreAdapter<BaileysAuthSnapshot, BaileysAuthSnapsh
     id: 'baileys',
     capabilities,
     toCanonical(input: BaileysAuthSnapshot): WaSnapshot {
-        return baileysToCanonical(input)
+        // Accept both shapes: already-revived `Uint8Array` and the
+        // baileys `{type:'Buffer', data:'<base64>'}` JSON shape (common
+        // when input comes from a DB driver that auto-parses JSON columns,
+        // skipping the `bufferJsonReviver` opportunity).
+        return baileysToCanonical(coerceBufferJson(input))
     },
     fromCanonical(snapshot: WaSnapshot): BaileysAuthSnapshot {
         return baileysFromCanonical(snapshot)

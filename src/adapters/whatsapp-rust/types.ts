@@ -64,6 +64,17 @@ export interface WhatsappRustSenderKeyRow {
     readonly record: Uint8Array
 }
 
+/**
+ * Rust's `sender_key_devices` table — pairs each bare sender-key record with
+ * the device JIDs that share it, so device-keyed libs can recover the per-
+ * device entries on round-trip.
+ */
+export interface WhatsappRustSenderKeyDeviceRow {
+    readonly groupJid: string
+    readonly deviceJid: string
+    readonly hasKey: boolean
+}
+
 export interface WhatsappRustAppStateKey {
     readonly keyId: Uint8Array
     readonly keyData: Uint8Array
@@ -115,6 +126,7 @@ export interface WhatsappRustSnapshot {
     readonly identities?: readonly WhatsappRustIdentityRow[]
     readonly sessions?: readonly WhatsappRustSessionRow[]
     readonly senderKeys?: readonly WhatsappRustSenderKeyRow[]
+    readonly senderKeyDevices?: readonly WhatsappRustSenderKeyDeviceRow[]
     readonly appStateKeys?: readonly WhatsappRustAppStateKey[]
     readonly appStateVersions?: readonly WhatsappRustAppStateVersionRow[]
     readonly appStateMutationMacs?: readonly WhatsappRustAppStateMutationMacRow[]

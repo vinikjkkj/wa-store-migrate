@@ -26,6 +26,7 @@ import type {
     WhatsappRustDeviceRegistryRow,
     WhatsappRustIdentityRow,
     WhatsappRustPreKeyRow,
+    WhatsappRustSenderKeyDeviceRow,
     WhatsappRustSenderKeyRow,
     WhatsappRustSessionRow,
     WhatsappRustSnapshot,
@@ -57,13 +58,39 @@ const capabilities: AdapterCapabilities = { read: READ, write: WRITE, lossy: LOS
 
 // rust signal-address strings end in a literal `.0` suffix
 // (`append_device_suffix` with `SIGNAL_DEVICE_ID = 0`). The actual device
-// id sits inside the JID prefix, not in this suffix.
+// id sits inside the JID prefix as `:<dev>`, not in this suffix.
 function stripRustDeviceSuffix(addr: string): string {
     return addr.endsWith('.0') ? addr.slice(0, -2) : addr
 }
 
 function rustAddrToIr(addr: string): IrAddress {
-    return parseLibsignalAddress(`${stripRustDeviceSuffix(addr)}.0`)
+    // After stripping `.0`, the form is `<user>[:<device>]@<server>` —
+    // a WhatsApp-style JID, NOT a libsignal address. parseLibsignalAddress
+    // chokes on the inner `:device` separator, so we parse directly.
+    const stripped = stripRustDeviceSuffix(addr)
+    const at = stripped.lastIndexOf('@')
+    if (at < 0) {
+        // No `@` — fall back to the libsignal parser (handles bare user.dev).
+        return parseLibsignalAddress(`${stripped}.0`)
+    }
+    const serverRaw = stripped.slice(at + 1)
+    const server = normalizeWaServer(serverRaw)
+    if (server === null) {
+        throw new SyntaxError(`rust address: unknown server "${serverRaw}" in "${addr}"`)
+    }
+    let head = stripped.slice(0, at)
+    let device = 0
+    const colon = head.lastIndexOf(':')
+    if (colon >= 0) {
+        const devStr = head.slice(colon + 1)
+        const d = Number(devStr)
+        if (!Number.isFinite(d) || d < 0) {
+            throw new SyntaxError(`rust address: bad device "${devStr}" in "${addr}"`)
+        }
+        device = d
+        head = head.slice(0, colon)
+    }
+    return { user: head, device, server }
 }
 
 function irAddrToRust(addr: IrAddress): string {
@@ -88,7 +115,10 @@ function parseRustSenderAddress(addr: string): {
 }
 
 function composeRustSenderAddress(groupId: string, sender: IrAddress): string {
-    return `${groupId}:${irAddrToRust(sender)}`
+    // rust normalizes sender to bare at decode (`to_non_ad()` in message.rs).
+    // Device tracking lives in `sender_key_devices` separately.
+    const bare: IrAddress = { ...sender, device: 0 }
+    return `${groupId}:${irAddrToRust(bare)}`
 }
 
 // rust packs the ADV signed identity into a single `AdvSignedDeviceIdentity`
@@ -188,17 +218,43 @@ export const whatsappRustAdapter: StoreAdapter<WhatsappRustSnapshot, WhatsappRus
         }
 
         if (input.senderKeys) {
+            // Rust keys records by `(group, bare-sender)` with per-device states
+            // inside; `sender_key_devices` tracks which devices share each one.
+            // Fan out one IR entry per device so device-keyed libs can re-index.
+            const devicesByGroupBareSender = new Map<string, IrAddress[]>()
+            for (const row of input.senderKeyDevices ?? []) {
+                if (!row.hasKey) continue
+                let sender: IrAddress
+                try {
+                    sender = rustAddrToIr(row.deviceJid)
+                } catch {
+                    continue
+                }
+                const bare: IrAddress = { ...sender, device: 0 }
+                const k = `${normalizeWaJid(row.groupJid)}|${irAddressKey(bare)}`
+                let list = devicesByGroupBareSender.get(k)
+                if (!list) {
+                    list = []
+                    devicesByGroupBareSender.set(k, list)
+                }
+                list.push(sender)
+            }
+
             for (const sk of input.senderKeys) {
                 const parsed = parseRustSenderAddress(sk.address)
                 if (!parsed) continue
-                const groupSender: IrGroupSender = {
-                    groupId: parsed.groupId,
-                    sender: parsed.sender
+                const lookupKey = `${parsed.groupId}|${irAddressKey(parsed.sender)}`
+                const devices = devicesByGroupBareSender.get(lookupKey) ?? [parsed.sender]
+                for (const dev of devices) {
+                    const groupSender: IrGroupSender = {
+                        groupId: parsed.groupId,
+                        sender: dev
+                    }
+                    snap.senderKeys.set(irGroupSenderKey(groupSender), {
+                        groupSender,
+                        record: { proto: sk.record }
+                    })
                 }
-                snap.senderKeys.set(irGroupSenderKey(groupSender), {
-                    groupSender,
-                    record: { proto: sk.record }
-                })
             }
         }
 
@@ -353,12 +409,35 @@ export const whatsappRustAdapter: StoreAdapter<WhatsappRustSnapshot, WhatsappRus
         }
 
         if (snap.senderKeys.size > 0) {
-            out.senderKeys = [...snap.senderKeys.values()].map(
-                ({ groupSender, record }): WhatsappRustSenderKeyRow => ({
-                    address: composeRustSenderAddress(groupSender.groupId, groupSender.sender),
-                    record: record.proto
+            // Collapse per-device IR rows into one record per bare-sender
+            // (rust's storage shape), preserving each device's state inside.
+            // Emit `sender_key_devices` so the reverse direction can split it.
+            const merged = new Map<string, { address: string; states: unknown[] }>()
+            const deviceRows: WhatsappRustSenderKeyDeviceRow[] = []
+            for (const { groupSender, record } of snap.senderKeys.values()) {
+                const address = composeRustSenderAddress(groupSender.groupId, groupSender.sender)
+                const decoded = proto.SenderKeyRecordStructure.decode(record.proto) as {
+                    senderKeyStates?: unknown[]
+                }
+                const states = decoded.senderKeyStates ?? []
+                const existing = merged.get(address)
+                if (existing) existing.states.push(...states)
+                else merged.set(address, { address, states: [...states] })
+                deviceRows.push({
+                    groupJid: groupSender.groupId,
+                    deviceJid: irAddrToRust(groupSender.sender).replace(/\.0$/, ''),
+                    hasKey: true
+                })
+            }
+            out.senderKeys = [...merged.values()].map(
+                ({ address, states }): WhatsappRustSenderKeyRow => ({
+                    address,
+                    record: proto.SenderKeyRecordStructure.encode({
+                        senderKeyStates: states
+                    }).finish()
                 })
             )
+            out.senderKeyDevices = deviceRows
         }
 
         if (snap.appStateSyncKeys.size > 0) {

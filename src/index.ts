@@ -44,7 +44,7 @@ export { migrate, planLosses } from '@migrate'
 export type { LibInput, LibOutput, LibShapeMap } from '@adapters/registry'
 export { ADAPTERS } from '@adapters/registry'
 
-export type { WaSnapshotJson } from '@api'
+export type { JsonSerializableLib, WaSnapshotJson } from '@api'
 export { snapshot } from '@api'
 export type {
     IrAppStateSyncKeyJson,
@@ -69,6 +69,9 @@ export {
     bufferJsonReplacer,
     bufferJsonReviver,
     bytesEqual,
+    coerceBufferJson,
+    encodeBufferJson,
+    encodeBytesAsBase64,
     ensurePrefixed33,
     fromBase64,
     parseLibsignalAddress,

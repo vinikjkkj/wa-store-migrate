@@ -271,7 +271,16 @@ func main() {
 		KeyID:     d.Device.SignedPreKey.KeyID,
 		Signature: decodeArr64(d.Device.SignedPreKey.Signature),
 	}
+	// wa-web wipes adv_secret_key post-pair (see
+	// `WAWebCompanionRegUtils.clearADVSecretKey`); sqlstore's
+	// `whatsmeow_device.adv_key` is NOT NULL. Substitute 32 zero bytes
+	// when the dump carries an empty value — the secret is only required
+	// for future re-pair operations, every other op uses the signed
+	// identity in `device.Account`.
 	device.AdvSecretKey = decode(d.Device.AdvSecretKey)
+	if len(device.AdvSecretKey) == 0 {
+		device.AdvSecretKey = make([]byte, 32)
+	}
 
 	if d.Device.Account != nil {
 		device.Account = &waProto.ADVSignedDeviceIdentity{

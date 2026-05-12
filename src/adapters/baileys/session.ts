@@ -115,7 +115,9 @@ function buildSnapshot(
         sendInfo && sendKeyMaterial?.key !== undefined && sendKeyMaterial?.key !== null
             ? {
                   ratchetKey: { pubKey: ratchetPubKey, privKey: ratchetPrivKey },
-                  nextMsgIndex: sendKeyMaterial.counter,
+                  // libsignal-node `counter` (-1=fresh) → proto `nextMsgIndex`
+                  // (0=fresh). -1 left as-is wraps to u32::MAX downstream.
+                  nextMsgIndex: sendKeyMaterial.counter + 1,
                   chainKey: asBytes(sendKeyMaterial.key, `${field}.sendChain.key`)
               }
             : {
@@ -140,7 +142,7 @@ function buildSnapshot(
         recvChains.push({
             senderRatchetKey: ratchet,
             chainKey: {
-                index: chain.chainKey.counter,
+                index: chain.chainKey.counter + 1,
                 key: asBytes(chain.chainKey.key, `recvChain[${k}].chainKey.key`)
             },
             messageKeys: []
@@ -246,8 +248,12 @@ function snapshotToBaileysEntry(
             messageKeys: Record<string, never>
         }
     > = {}
+    // Inverse of `entryToSnapshot`: counter = nextMsgIndex - 1, floored at -1.
     chains[sendKeyB64] = {
-        chainKey: { counter: snap.sendChain.nextMsgIndex, key: snap.sendChain.chainKey },
+        chainKey: {
+            counter: Math.max(snap.sendChain.nextMsgIndex - 1, -1),
+            key: snap.sendChain.chainKey
+        },
         chainType: CHAIN_TYPE_SENDING,
         messageKeys: {}
     }
@@ -257,7 +263,10 @@ function snapshotToBaileysEntry(
         const ratchet = r.senderRatchetKey
         const k = toBase64(ratchet)
         chains[k] = {
-            chainKey: { counter: r.chainKey.index ?? 0, key: r.chainKey.key },
+            chainKey: {
+                counter: Math.max((r.chainKey.index ?? 0) - 1, -1),
+                key: r.chainKey.key
+            },
             chainType: CHAIN_TYPE_RECEIVING,
             messageKeys: {}
         }
@@ -282,10 +291,10 @@ function snapshotToBaileysEntry(
         remoteIdentityKey: snap.remote.pubKey
     }
 
-    // recvChains[0] is the most recent ratchet (proto order is highest-first).
-    // Fall back to our send ratchet for X3DH initiators before Bob's reply —
-    // matches baileys' own constructor.
-    const lastRemote = snap.recvChains[0]?.senderRatchetKey ?? ratchetPub
+    // proto recv chains are chronological (push-to-end); the newest one is what
+    // libsignal needs for the next DH ratchet step. Fall back to our send
+    // ratchet for X3DH initiators before Bob's reply.
+    const lastRemote = snap.recvChains[snap.recvChains.length - 1]?.senderRatchetKey ?? ratchetPub
 
     const currentRatchet: BaileysCurrentRatchet = {
         ephemeralKeyPair: {

@@ -1,4 +1,5 @@
 import { parseLibsignalAddress } from '@codec/address'
+import { bufferJsonReviver } from '@codec/buffer-json'
 import { asBytes, fromBase64 } from '@codec/bytes'
 import {
     emptySnapshot,
@@ -15,6 +16,7 @@ import {
     type WaSnapshot
 } from '@ir'
 
+import { fromBaileysProtocolAddress, fromBaileysSenderKeyName } from './address.js'
 import { baileysSenderKeyToProto } from './sender-key.js'
 import type { BaileysSerializedSenderKey, BaileysSerializedSessionRecord } from './session-types.js'
 import { type BaileysSessionLocal, baileysSessionToProto } from './session.js'
@@ -42,7 +44,8 @@ function decodeSenderKeyValue(v: BaileysSenderKeyValue, field: string): BaileysS
     if (v instanceof Uint8Array) {
         const text = Buffer.from(v).toString('utf-8')
         try {
-            const parsed = JSON.parse(text)
+            // baileys stores via `JSON.stringify(states, BufferJSON.replacer)`.
+            const parsed = JSON.parse(text, bufferJsonReviver)
             if (!Array.isArray(parsed)) throw new Error('expected SenderKeyStateStructure[]')
             return parsed as BaileysSerializedSenderKey
         } catch (e) {
@@ -270,7 +273,7 @@ export function baileysToCanonical(input: BaileysAuthSnapshot): WaSnapshot {
             if (!value) continue
             const serialized = decodeSessionValue(value, `session[${addrStr}]`)
             const proto = baileysSessionToProto(serialized, local)
-            const irAddr = parseLibsignalAddress(addrStr)
+            const irAddr = parseBaileysSessionKey(addrStr)
             snap.sessions.set(irAddressKey(irAddr), { address: irAddr, record: { proto } })
         }
     }
@@ -280,17 +283,9 @@ export function baileysToCanonical(input: BaileysAuthSnapshot): WaSnapshot {
         for (const [encoded, value] of Object.entries(senderKeyDict)) {
             if (!value) continue
             const states = decodeSenderKeyValue(value, `sender-key[${encoded}]`)
-            // SenderKeyName.serialize() = `${groupId}::${sender.id}::${deviceId}`.
-            // groupId may contain `@`; sender.id may contain `_<agent>`.
-            const lastSep = encoded.lastIndexOf('::')
-            const firstSep = encoded.indexOf('::')
-            if (lastSep < 0 || firstSep < 0 || firstSep === lastSep) continue
-            const groupId = encoded.slice(0, firstSep)
-            const senderId = encoded.slice(firstSep + 2, lastSep)
-            const deviceStr = encoded.slice(lastSep + 2)
-            const device = Number(deviceStr)
-            if (!Number.isFinite(device)) continue
-            const sender = parseLibsignalAddress(`${senderId}:${device}`)
+            const parsed = fromBaileysSenderKeyName(encoded)
+            if (!parsed) continue
+            const { groupId, sender } = parsed
             const proto = baileysSenderKeyToProto(states, groupId, sender)
             const groupSender = { groupId, sender }
             snap.senderKeys.set(irGroupSenderKey(groupSender), { groupSender, record: { proto } })
@@ -298,4 +293,11 @@ export function baileysToCanonical(input: BaileysAuthSnapshot): WaSnapshot {
     }
 
     return snap
+}
+
+function parseBaileysSessionKey(key: string): ReturnType<typeof parseLibsignalAddress> {
+    if (key.includes('.') && !key.includes('@')) {
+        return fromBaileysProtocolAddress(key)
+    }
+    return parseLibsignalAddress(key)
 }

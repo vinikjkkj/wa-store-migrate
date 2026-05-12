@@ -1,7 +1,7 @@
 import { decodeAppStateFingerprint, encodeAppStateFingerprint } from 'zapo-js/appstate'
 
 import type { AdapterCapabilities, IrDomain, StoreAdapter } from '@adapter'
-import { parseLibsignalAddress, toLibsignalAddress } from '@codec/address'
+import { parseLibsignalAddress } from '@codec/address'
 import {
     emptySnapshot,
     irAddressKey,
@@ -88,8 +88,36 @@ function fingerprintFromBytes(bytes: Uint8Array | undefined) {
     return decoded
 }
 
-const parseWhatsmeowAddr = parseLibsignalAddress
-const formatWhatsmeowAddr = toLibsignalAddress
+// whatsmeow keys its stores by `<user>[_<agent>]:<device>` (agent=1 for LID).
+function formatWhatsmeowAddr(addr: {
+    user: string
+    device: number
+    server?: 'lid' | 's.whatsapp.net'
+}): string {
+    const isLid = addr.server === 'lid'
+    const signalUser = isLid ? `${addr.user}_1` : addr.user
+    return `${signalUser}:${addr.device}`
+}
+
+function parseWhatsmeowAddr(s: string) {
+    if (s.includes('@')) return parseLibsignalAddress(s)
+    const colon = s.lastIndexOf(':')
+    if (colon < 0) return parseLibsignalAddress(s)
+    const head = s.slice(0, colon)
+    const device = Number(s.slice(colon + 1))
+    if (!Number.isFinite(device)) return parseLibsignalAddress(s)
+    const underscore = head.lastIndexOf('_')
+    if (underscore < 0) {
+        return { user: head, device }
+    }
+    const dt = Number(head.slice(underscore + 1))
+    if (!Number.isFinite(dt)) return parseLibsignalAddress(s)
+    return {
+        user: head.slice(0, underscore),
+        device,
+        ...(dt === 1 ? { server: 'lid' as const } : {})
+    }
+}
 
 export const whatsmeowAdapter: StoreAdapter<WhatsmeowSnapshot, WhatsmeowSnapshot> = {
     id: 'whatsmeow',

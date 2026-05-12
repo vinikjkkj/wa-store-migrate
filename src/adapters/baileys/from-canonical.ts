@@ -1,7 +1,9 @@
-import { toLibsignalAddress } from '@codec/address'
-import { toBase64 } from '@codec/bytes'
+import { parseLibsignalAddress } from '@codec/address'
+import { bufferJsonReplacer } from '@codec/buffer-json'
+import { ensurePrefixed33, toBase64 } from '@codec/bytes'
 import type { WaSnapshot } from '@ir'
 
+import { toBaileysProtocolAddress, toBaileysSenderKeyName } from './address.js'
 import { protoToBaileysSenderKey } from './sender-key.js'
 import { protoToBaileysSession } from './session.js'
 import type {
@@ -123,7 +125,7 @@ function keysFromSnapshot(snap: WaSnapshot): BaileysSignalDataSet {
     if (snap.sessions.size > 0) {
         const dict: Record<string, unknown> = {}
         for (const { address, record } of snap.sessions.values()) {
-            dict[toLibsignalAddress(address)] = protoToBaileysSession(record.proto)
+            dict[toBaileysProtocolAddress(address)] = protoToBaileysSession(record.proto)
         }
         out.session = dict
     }
@@ -131,20 +133,16 @@ function keysFromSnapshot(snap: WaSnapshot): BaileysSignalDataSet {
     if (snap.senderKeys.size > 0) {
         const dict: Record<string, unknown> = {}
         for (const { groupSender, record } of snap.senderKeys.values()) {
-            // SenderKeyName.serialize() = `${groupId}::${sender.id}::${deviceId}`.
-            // sender.id carries any `_<agent>` and `@<server>` suffix; device
-            // is its own segment.
-            const senderId =
-                (groupSender.sender.server
-                    ? `${groupSender.sender.user}@${groupSender.sender.server}`
-                    : groupSender.sender.user) +
-                (groupSender.sender.agent !== undefined ? `_${groupSender.sender.agent}` : '')
-            const key = `${groupSender.groupId}::${senderId}::${groupSender.sender.device}`
-            dict[key] = protoToBaileysSenderKey(
+            const key = toBaileysSenderKeyName(groupSender.groupId, groupSender.sender)
+            const states = protoToBaileysSenderKey(
                 record.proto,
                 groupSender.groupId,
                 groupSender.sender
             )
+            // baileys' `loadSenderKey` runs `JSON.parse(utf-8, BufferJSON.reviver)`,
+            // so byte fields must be in `{type:'Buffer', data}` form on disk.
+            const serialized = JSON.stringify(states, bufferJsonReplacer)
+            dict[key] = new Uint8Array(Buffer.from(serialized, 'utf-8'))
         }
         out['sender-key'] = dict
     }
@@ -210,7 +208,15 @@ function keysFromSnapshot(snap: WaSnapshot): BaileysSignalDataSet {
 
     if (snap.signalIdentities.size > 0) {
         const dict: Record<string, Uint8Array> = {}
-        for (const [k, v] of snap.signalIdentities) dict[k] = v
+        for (const [irKey, identityKey] of snap.signalIdentities) {
+            const addr = parseLibsignalAddress(irKey)
+            // baileys' saveIdentity does byte-equality against 33-byte keys;
+            // a raw 32-byte form trips a spurious "identity key changed".
+            dict[toBaileysProtocolAddress(addr)] = ensurePrefixed33(
+                identityKey,
+                `signalIdentities[${irKey}]`
+            )
+        }
         out['identity-key'] = dict
     }
 

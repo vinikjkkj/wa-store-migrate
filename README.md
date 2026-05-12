@@ -69,9 +69,11 @@ await redis.set(`wa:${userId}`, JSON.stringify(snapshot.toJSON(ir)))
 const ir2 = snapshot.fromJSON(JSON.parse(await redis.get(`wa:${userId}`)))
 const zapoData = snapshot.to('zapo', ir2)
 
-// Or construct IR from scratch (e.g. mapping arbitrary DB rows)
+// Or construct IR from scratch (e.g. mapping arbitrary DB rows).
+// `source` tags the IR with the LibId whose shape your data matches —
+// it's diagnostic only (loss reports use the adapter, not this field).
 const built = snapshot
-    .build({ source: 'pg', identity, signedPreKey })
+    .build({ source: 'baileys', identity, signedPreKey })
     .addSessions(rows.map((r) => ({ address: r.addr, record: { proto: r.bytes } })))
     .addPreKeys(preKeyRows)
     .build()
@@ -164,27 +166,12 @@ Full example: [`examples/wa-web-to-baileys.ts`](examples/wa-web-to-baileys.ts)
 
 ### zapo
 
-**Read** — pull from a `WaStore` (zapo-js's session store):
-
-```ts
-import type { WaStore } from 'zapo-js'
-import type { ZapoStoreSnapshot } from 'wa-store-migrate'
-
-async function readZapoStore(store: WaStore, sessionId: string): Promise<ZapoStoreSnapshot> {
-    const s = store.session(sessionId)
-    return {
-        credentials: (await s.auth.snapshot())!,
-        preKeys: await s.preKey.allPreKeys(),
-        identities: await s.identity.allRemoteIdentities(),
-        sessions: await s.session.allSessions(),
-        senderKeys: await s.senderKey.allSenderKeys(),
-        // optional domains — pull whichever your destination uses
-        privacyTokens: await s.privacyToken.allTokens(),
-        deviceLists: await s.deviceList.allUserDevices(),
-        contacts: await s.contacts.all()
-    }
-}
-```
+**Read** — `WaStore`'s contract is by-key (`getPreKeyById`, `getSession`, …) with no
+bulk iterator, so build a `ZapoStoreSnapshot` by querying the underlying storage
+directly. The sqlite layout lives in `@zapo-js/store-sqlite`; see
+[`examples/chain-zapo-to-whatsmeow.ts`](examples/chain-zapo-to-whatsmeow.ts) for a
+working reader that decodes session/sender-key blobs via
+`decodeSignalSessionRecord` / `decodeSenderKeyRecord` from `zapo-js/signal`.
 
 **Write** — push into a fresh sqlite-backed `WaStore`:
 
@@ -237,11 +224,18 @@ Full example: [`examples/wa-web-to-zapo.ts`](examples/wa-web-to-zapo.ts)
 
 ### whatsmeow
 
-The Go side dumps to JSON; the JS side just reads/writes the JSON file. Use
-this Go helper next to your bot:
+The Go side reads/writes whatsmeow's sqlstore; the Node side handles the
+conversion. Bytes in the JSON crossing the boundary are **raw base64 strings**
+(matches `base64.StdEncoding.DecodeString` in Go), NOT the `{type:'Buffer'}`
+shape baileys uses. The `snapshot.toJSON('whatsmeow', ir)` overload handles
+the encoding; reading back needs to base64-decode every leaf.
+
+**Read** — dump from a running whatsmeow bot. Build a Go helper that emits
+the `WhatsmeowSnapshot` shape (see `examples/whatsmeow-runner/main.go` for
+the field mapping it uses on the import side — invert it for export):
 
 ```go
-// In your whatsmeow project
+// Sketch — implement `keyPair`/`signedPreKey`/`account` against your sqlstore.
 import "encoding/base64"
 import "encoding/json"
 
@@ -249,35 +243,53 @@ func DumpDevice(client *whatsmeow.Client) ([]byte, error) {
     d := client.Store
     return json.Marshal(map[string]any{
         "device": map[string]any{
-            "noiseKey":     keyPair(d.NoiseKey),
-            "identityKey":  keyPair(d.IdentityKey),
-            "signedPreKey": signedPreKey(d.SignedPreKey),
+            "noiseKey":       keyPair(d.NoiseKey),
+            "identityKey":    keyPair(d.IdentityKey),
+            "signedPreKey":   signedPreKey(d.SignedPreKey),
             "registrationId": d.RegistrationID,
-            "advSecretKey": base64.StdEncoding.EncodeToString(d.AdvSecretKey),
-            "account":      account(d.Account),
-            "meJid":        d.ID.String(),
-            // …pull every Device field you need into the WhatsmeowDeviceRow shape
+            "advSecretKey":   base64.StdEncoding.EncodeToString(d.AdvSecretKey),
+            "account":        account(d.Account),
+            "meJid":          d.ID.String(),
         },
-        // sessions/sender-keys: read from your sqlstore — they're JSON
-        // serializations of go.mau.fi/libsignal structs. Pass them through
-        // as base64-encoded UTF-8 bytes.
+        // sessions/sender-keys: read from sqlstore as raw bytes, then
+        // base64-encode for the JSON wire.
     })
 }
 ```
 
-On the Node side:
+On the Node side, decode every base64 string back to `Uint8Array`:
 
 ```ts
 import { readFileSync } from 'node:fs'
-import { bufferJsonReviver, type WhatsmeowSnapshot } from 'wa-store-migrate'
+import type { WhatsmeowSnapshot } from 'wa-store-migrate'
 
-function readWhatsmeowDump(jsonPath: string): WhatsmeowSnapshot {
-    return JSON.parse(readFileSync(jsonPath, 'utf-8'), bufferJsonReviver)
+function decodeBase64Leaves<T>(v: T): T {
+    if (typeof v === 'string') return Buffer.from(v, 'base64') as unknown as T
+    if (Array.isArray(v)) return v.map(decodeBase64Leaves) as unknown as T
+    if (v && typeof v === 'object') {
+        const out: Record<string, unknown> = {}
+        for (const k of Object.keys(v as object))
+            out[k] = decodeBase64Leaves((v as Record<string, unknown>)[k])
+        return out as T
+    }
+    return v
 }
+
+const raw = JSON.parse(readFileSync(jsonPath, 'utf-8'))
+const dump = decodeBase64Leaves(raw) as WhatsmeowSnapshot
 ```
 
-Writing back: invert the Go helper — INSERT each row into the corresponding
-sqlstore table. See `examples/baileys-to-whatsmeow.ts` for the field mapping.
+If you instead persisted via `snapshot.toJSON(ir)` (lib-agnostic IR JSON),
+use `snapshot.fromJSON()` and run `snapshot.to('whatsmeow', ir)` to get the
+typed `WhatsmeowSnapshot`.
+
+**Write** — the working end-to-end pipeline is the Go runner in
+[`examples/whatsmeow-runner/`](examples/whatsmeow-runner/) driven by
+[`examples/chain-zapo-to-whatsmeow.ts`](examples/chain-zapo-to-whatsmeow.ts):
+the chain script emits a JSON dump in `WhatsmeowSnapshot` shape and spawns
+the Go runner, which calls `device.Save` + per-domain `Put*` methods on the
+sqlstore. Rolling your own writer: same Go pattern, but you decide where to
+get the input from.
 
 ### wa-web
 
@@ -347,8 +359,17 @@ function readRustDb(dbPath: string, deviceId = 1): WhatsappRustSnapshot {
 }
 ```
 
-**Write** — apply the rust SQLite migrations + populate diesel's tracker so
-the rust client treats the schema as already-applied:
+**Write** — two paths, pick by where you want the work to happen:
+
+1. **Rust runner via `Backend` trait** (recommended) —
+   [`examples/whatsapp-rust-runner/`](examples/whatsapp-rust-runner/) imports
+   a JSON dump (`WA_IR_JSON` env var) into any `Backend` impl, so storage
+   internals (diesel migrations, hash encoding, schema drift) stay on the
+   rust side. [`examples/chain-whatsmeow-to-rust.ts`](examples/chain-whatsmeow-to-rust.ts)
+   shows the driver: emit a `WhatsappRustSnapshot` JSON, spawn the runner.
+
+2. **Node-side direct SQL** — if you can't run the rust binary, apply the
+   diesel migrations and INSERT yourself:
 
 ```ts
 import Database from 'better-sqlite3'
@@ -374,23 +395,22 @@ function writeRustDb(
     )
     for (const d of readdirSync(migrationsDir).sort()) {
         db.exec(readFileSync(join(migrationsDir, d, 'up.sql'), 'utf-8'))
-        // diesel strips dashes from the timestamp prefix
         const version = d.split('_')[0]!.replace(/-/g, '')
         recordVersion.run(version)
     }
     db.exec('PRAGMA foreign_keys = ON')
-
     // INSERT rows from `snap.device`, `snap.preKeys`, `snap.sessions`,
     // `snap.senderKeys`, `snap.identities`, `snap.appStateKeys`,
-    // `snap.appStateVersions`, `snap.appStateMutationMacs`, `snap.tcTokens`,
-    // `snap.deviceRegistry` — all FK'd to `device_id`.
+    // `snap.appStateVersions`, `snap.appStateMutationMacs`,
+    // `snap.senderKeyDevices` — all FK'd to `device_id`. The
+    // `app_state_versions.state_data` column is bincode-encoded `HashState`
+    // (see `examples/wa-web-to-rust.ts` for the encoder).
     db.close()
 }
 ```
 
 Full example: [`examples/wa-web-to-rust.ts`](examples/wa-web-to-rust.ts)
-shows the complete pipeline (every table populated end-to-end, including
-the `bincode::HashState` encoding for `app_state_versions.state_data`).
+covers the Node-side direct-SQL path end to end.
 
 ## Direction matrix (20 routes)
 
@@ -548,6 +568,9 @@ import {
     // Codecs
     bufferJsonReviver,
     bufferJsonReplacer,
+    coerceBufferJson, // walk an object and turn `{type:'Buffer'}` leaves into Uint8Array
+    encodeBufferJson, // inverse: walk and turn Uint8Array leaves into `{type:'Buffer'}`
+    encodeBytesAsBase64, // walk and turn Uint8Array leaves into raw base64 strings
     parseLibsignalAddress,
     toLibsignalAddress,
     asBytes,
@@ -557,6 +580,7 @@ import {
     // IR types
     type WaSnapshot,
     type WaSnapshotJson,
+    type JsonSerializableLib,
     type IrAddress,
     type IrIdentity,
     type LibId,
@@ -567,6 +591,16 @@ import {
     type IrDomain
 } from 'wa-store-migrate'
 ```
+
+`snapshot.toJSON()` has two forms:
+
+- `snapshot.toJSON(ir)` — portable lib-agnostic IR JSON (round-trips through
+  `snapshot.fromJSON()`).
+- `snapshot.toJSON(lib, ir)` — JSON shape of a specific lib (`'baileys' |
+  'wa-web' | 'whatsmeow' | 'whatsapp-rust'`). `baileys`/`wa-web` emit the
+  `{type:'Buffer', data:'<base64>'}` convention; `whatsmeow`/`whatsapp-rust`
+  emit raw base64 strings (matches Go's `base64.StdEncoding` and rust's
+  `base64::engine::general_purpose::STANDARD`).
 
 The library is a **pure conversion lib**. It never reads files, opens
 sockets, or holds global state. The user owns I/O — both reading the source

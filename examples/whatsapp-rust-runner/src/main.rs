@@ -1,14 +1,25 @@
-//! Companion to `examples/wa-web-to-rust.ts`. Opens the pre-migrated
-//! `whatsapp.db`, spawns the whatsapp-rust Bot, and connects.
+//! Companion to `examples/wa-web-to-rust.ts`.
+//!
+//! Two modes:
+//!
+//!   1. With `WA_IR_JSON`: load a `WhatsappRustSnapshot` JSON via the
+//!      `Backend` trait (works with any backend, not just SqliteStore),
+//!      then connect.
+//!   2. Without `WA_IR_JSON`: open an already-populated SQLite at
+//!      `WA_DB_PATH` (default `whatsapp.db`) and connect.
 //!
 //! Env vars:
-//!   WA_DB_PATH   path to the SQLite db produced by wa-web-to-rust.ts
-//!                (default: `whatsapp.db` in the cwd)
+//!   WA_IR_JSON   path to JSON produced by `wa-web-to-rust.ts`
+//!   WA_DB_PATH   path to SQLite (used only when WA_IR_JSON is unset;
+//!                default `whatsapp.db`)
 //!   EXIT_MS      auto-disconnect after this many ms (default: 0 = stay alive)
 //!
 //!   cargo run --manifest-path examples/whatsapp-rust-runner/Cargo.toml
 
+mod import;
+
 use std::env;
+use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -29,17 +40,41 @@ fn main() {
         .expect("Failed to build tokio runtime");
 
     rt.block_on(async {
-        let db_path = env::var("WA_DB_PATH").unwrap_or_else(|_| "whatsapp.db".to_string());
-        info!("Opening SQLite backend at {db_path}");
-
-        let backend = match SqliteStore::new(&db_path).await {
-            Ok(s) => Arc::new(s),
-            Err(e) => {
-                error!("Failed to open SQLite backend: {e}");
+        let backend = if let Ok(json_path) = env::var("WA_IR_JSON") {
+            let db_path =
+                env::var("WA_DB_PATH").unwrap_or_else(|_| "whatsapp_imported.db".to_string());
+            info!("Importing {json_path} into SQLite at {db_path} via Backend trait");
+            let json = match fs::read_to_string(&json_path) {
+                Ok(j) => j,
+                Err(e) => {
+                    error!("Failed to read {json_path}: {e}");
+                    return;
+                }
+            };
+            let backend = match SqliteStore::new(&db_path).await {
+                Ok(s) => Arc::new(s),
+                Err(e) => {
+                    error!("Failed to open SQLite backend: {e}");
+                    return;
+                }
+            };
+            if let Err(e) = import::import_dump(backend.as_ref(), &json).await {
+                error!("Import failed: {e:?}");
                 return;
             }
+            info!("Import done; backend ready");
+            backend
+        } else {
+            let db_path = env::var("WA_DB_PATH").unwrap_or_else(|_| "whatsapp.db".to_string());
+            info!("Opening pre-populated SQLite backend at {db_path}");
+            match SqliteStore::new(&db_path).await {
+                Ok(s) => Arc::new(s),
+                Err(e) => {
+                    error!("Failed to open SQLite backend: {e}");
+                    return;
+                }
+            }
         };
-        info!("Backend ready, building Bot…");
 
         let mut bot = Bot::builder()
             .with_backend(backend)
@@ -53,7 +88,7 @@ fn main() {
                     Event::PairingQrCode { code, timeout } => {
                         info!("QR code (valid {}s): {code}", timeout.as_secs())
                     }
-                    _ => {}
+                    other => info!("[event] {other:?}"),
                 }
             })
             .build()

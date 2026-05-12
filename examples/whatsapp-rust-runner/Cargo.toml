@@ -12,7 +12,17 @@ whatsapp-rust = { path = "../../whatsapp-rust" }
 whatsapp-rust-tokio-transport = { path = "../../whatsapp-rust/transports/tokio-transport" }
 whatsapp-rust-ureq-http-client = { path = "../../whatsapp-rust/http_clients/ureq-client" }
 wacore = { path = "../../whatsapp-rust/wacore" }
+wacore-binary = { path = "../../whatsapp-rust/wacore/binary" }
+wacore-appstate = { path = "../../whatsapp-rust/wacore/appstate", default-features = false }
 
 env_logger = "0.11"
 log = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time"] }
+anyhow = "1"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = { version = "2.0.1", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3"

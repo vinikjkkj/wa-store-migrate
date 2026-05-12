@@ -9,4 +9,10 @@ export {
     toBase64
 } from './bytes.js'
 export { parseLibsignalAddress, toLibsignalAddress } from './address.js'
-export { bufferJsonReplacer, bufferJsonReviver } from './buffer-json.js'
+export {
+    bufferJsonReplacer,
+    bufferJsonReviver,
+    coerceBufferJson,
+    encodeBufferJson,
+    encodeBytesAsBase64
+} from './buffer-json.js'
