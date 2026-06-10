@@ -1,6 +1,6 @@
 {
     "name": "wa-store-migrate",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Universal store migrator for WhatsApp libraries (zapo, baileys, whatsmeow, wa-web, whatsapp-rust)",
     "license": "MIT",
     "author": {
