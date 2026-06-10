@@ -597,7 +597,7 @@ import {
 - `snapshot.toJSON(ir)` — portable lib-agnostic IR JSON (round-trips through
   `snapshot.fromJSON()`).
 - `snapshot.toJSON(lib, ir)` — JSON shape of a specific lib (`'baileys' |
-  'wa-web' | 'whatsmeow' | 'whatsapp-rust'`). `baileys`/`wa-web` emit the
+'wa-web' | 'whatsmeow' | 'whatsapp-rust'`). `baileys`/`wa-web` emit the
   `{type:'Buffer', data:'<base64>'}` convention; `whatsmeow`/`whatsapp-rust`
   emit raw base64 strings (matches Go's `base64.StdEncoding` and rust's
   `base64::engine::general_purpose::STANDARD`).

@@ -22,6 +22,7 @@ import { dirname, resolve } from 'node:path'
 import { createSqliteStore } from '@zapo-js/store-sqlite'
 
 import { WaClient, createPinoLogger, createStore, type LogLevel } from 'zapo-js'
+import type { WaAppStateSyncKey } from 'zapo-js/appstate'
 
 import type { WaWebSnapshot } from '@adapters/wa-web'
 import { bufferJsonReviver } from '@codec/buffer-json'
@@ -118,7 +119,9 @@ async function main(): Promise<void> {
     }
 
     if (zapoData.appState) {
-        await session.appState.upsertSyncKeys(zapoData.appState.keys)
+        await session.appState.upsertSyncKeys(
+            zapoData.appState.keys as readonly WaAppStateSyncKey[]
+        )
         const updates = Object.entries(zapoData.appState.collections).map(([collection, v]) => ({
             collection: collection as never,
             version: v.version,
@@ -160,7 +163,7 @@ async function main(): Promise<void> {
     client.on('auth_paired', ({ credentials }: { credentials: { meJid?: string } }) => {
         console.log(`[paired] meJid=${credentials.meJid ?? 'unknown'}`)
     })
-    client.on('message', (event: { message: unknown; senderJid?: string; chatJid?: string }) => {
+    client.on('message', (event: { message?: unknown; senderJid?: string; chatJid?: string }) => {
         const msg = event.message as
             | { conversation?: string; extendedTextMessage?: { text?: string } }
             | undefined

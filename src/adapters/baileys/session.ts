@@ -199,7 +199,7 @@ export function baileysSessionToProto(
         prev.push(buildSnapshot(entry, local, `prevSession[${k}]`))
     }
 
-    return encodeSignalSessionRecord({ ...main, prevSessions: prev as never })
+    return encodeSignalSessionRecord({ ...main, prevSessions: prev })
 }
 
 interface DecodedSnapshot {

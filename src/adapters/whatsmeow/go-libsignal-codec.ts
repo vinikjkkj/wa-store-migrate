@@ -266,7 +266,7 @@ export function whatsmeowSessionJsonToProto(jsonBytes: Uint8Array): Uint8Array {
         currentSession: goStateToProto(obj.SessionState),
         previousSessions: (obj.PreviousStates ?? []).map(goStateToProto)
     }
-    return RecordStructure.encode(recordMsg).finish() as Uint8Array
+    return RecordStructure.encode(recordMsg).finish()
 }
 
 /** IR sender-key proto bytes → whatsmeow JSON bytes (UTF-8). */
@@ -318,7 +318,7 @@ export function whatsmeowSenderKeyJsonToProto(jsonBytes: Uint8Array): Uint8Array
                       iteration: s.SenderChainKey.Iteration,
                       seed: fromB64(s.SenderChainKey.ChainKey)
                   }
-                : undefined,
+                : null,
             senderSigningKey: {
                 public: fromB64(s.SigningKeyPublic),
                 private: fromB64(s.SigningKeyPrivate)
@@ -330,5 +330,5 @@ export function whatsmeowSenderKeyJsonToProto(jsonBytes: Uint8Array): Uint8Array
         }))
     }
 
-    return SenderKeyRecordStructure.encode(protoMsg).finish() as Uint8Array
+    return SenderKeyRecordStructure.encode(protoMsg).finish()
 }

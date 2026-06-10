@@ -434,7 +434,7 @@ export const whatsappRustAdapter: StoreAdapter<WhatsappRustSnapshot, WhatsappRus
                     address,
                     record: proto.SenderKeyRecordStructure.encode({
                         senderKeyStates: states
-                    }).finish()
+                    } as Parameters<typeof proto.SenderKeyRecordStructure.encode>[0]).finish()
                 })
             )
             out.senderKeyDevices = deviceRows

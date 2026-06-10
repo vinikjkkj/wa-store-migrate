@@ -18,6 +18,7 @@ import { dirname, join, resolve } from 'node:path'
 
 import { createSqliteStore } from '@zapo-js/store-sqlite'
 import { createPinoLogger, createStore, WaClient } from 'zapo-js'
+import type { WaAppStateSyncKey } from 'zapo-js/appstate'
 
 import type { BaileysAuthSnapshot } from '@adapters/baileys'
 import { snapshot } from '@api'
@@ -110,7 +111,7 @@ async function main(): Promise<void> {
         await session.senderKey.upsertSenderKey(sk.record as never)
     }
     if (z.appState) {
-        await session.appState.upsertSyncKeys(z.appState.keys)
+        await session.appState.upsertSyncKeys(z.appState.keys as readonly WaAppStateSyncKey[])
         const updates = Object.entries(z.appState.collections).map(([collection, v]) => ({
             collection: collection as never,
             version: v.version,
@@ -147,7 +148,7 @@ async function main(): Promise<void> {
     client.on('auth_qr', ({ qr, ttlMs }: { qr: string; ttlMs: number }) => {
         console.log(`[qr] ttlMs=${ttlMs} value=${qr}`)
     })
-    client.on('message', (event: { message: any; senderJid?: string; chatJid?: string }) => {
+    client.on('message', (event: { message?: any; senderJid?: string; chatJid?: string }) => {
         const msg = event.message
         const text =
             msg?.conversation ??

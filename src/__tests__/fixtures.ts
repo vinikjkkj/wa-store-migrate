@@ -38,9 +38,8 @@ export function fakeSessionProto(): Uint8Array {
         recvChains: [
             {
                 senderRatchetKey: pub33(0x60),
-                nextMsgIndex: 3,
-                chainKey: fb(0x61, 32),
-                unusedMsgKeys: []
+                chainKey: { index: 3, key: fb(0x61, 32) },
+                messageKeys: []
             }
         ],
         initialExchangeInfo: null,
