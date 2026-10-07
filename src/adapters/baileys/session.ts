@@ -1,3 +1,4 @@
+import { proto } from 'zapo-js/proto'
 import { decodeSignalSessionRecord, encodeSignalSessionRecord } from 'zapo-js/signal'
 
 import {
@@ -191,15 +192,26 @@ export function baileysSessionToProto(
     if (!current) throw new Error('baileys session: empty _sessions')
 
     const main = buildSnapshot(current.entry, local, 'currentSession')
-    const prev = []
+    const prev: proto.ISessionStructure[] = []
     for (const k of Object.keys(serialized._sessions)) {
         if (k === current.key) continue
         const entry = serialized._sessions[k]
         if (!entry) continue
-        prev.push(buildSnapshot(entry, local, `prevSession[${k}]`))
+        prev.push(snapshotToSessionStructure(buildSnapshot(entry, local, `prevSession[${k}]`)))
     }
 
     return encodeSignalSessionRecord({ ...main, prevSessions: prev })
+}
+
+// `encodeSignalSessionRecord` only maps the current session; `prevSessions`
+// must already be proto-shaped.
+function snapshotToSessionStructure(
+    snapshot: ReturnType<typeof buildSnapshot>
+): proto.ISessionStructure {
+    const encoded = encodeSignalSessionRecord({ ...snapshot, prevSessions: [] })
+    const decoded = proto.RecordStructure.decode(encoded).currentSession
+    if (!decoded) throw new Error('baileys session: archived entry encoded without a session')
+    return decoded
 }
 
 interface DecodedSnapshot {
