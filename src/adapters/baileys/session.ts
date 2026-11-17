@@ -236,6 +236,20 @@ interface DecodedSnapshot {
     aliceBaseKey: Uint8Array | null
 }
 
+// Inverse of `snapshotToSessionStructure`: `decodeSignalSessionRecord` only maps
+// the current session and returns `prevSessions` as protos.
+function sessionStructureToSnapshot(
+    structure: proto.ISessionStructure,
+    field: string
+): DecodedSnapshot {
+    const encoded = proto.RecordStructure.encode({ currentSession: structure }).finish()
+    try {
+        return decodeSignalSessionRecord(encoded) as DecodedSnapshot
+    } catch (err) {
+        throw new Error(`baileys session: ${field}: ${(err as Error).message}`, { cause: err })
+    }
+}
+
 function snapshotToBaileysEntry(
     snap: DecodedSnapshot,
     options: { isOpen: boolean; closedAtMs?: number }
@@ -342,13 +356,11 @@ function snapshotToBaileysEntry(
 // Empty `_sessions` is a legitimate result — the next PreKey message
 // rebuilds the session. Prev entries get fabricated close timestamps
 // (the proto doesn't carry them); libsignal-node re-prunes on access.
-export function protoToBaileysSession(proto: Uint8Array): BaileysSerializedSessionRecord {
-    const record = decodeSignalSessionRecord(proto) as DecodedSnapshot & {
-        prevSessions: ReadonlyArray<DecodedSnapshot>
-    }
+export function protoToBaileysSession(bytes: Uint8Array): BaileysSerializedSessionRecord {
+    const record = decodeSignalSessionRecord(bytes)
     const _sessions: Record<string, BaileysSerializedSessionEntry> = {}
 
-    const mainEntry = snapshotToBaileysEntry(record, { isOpen: true })
+    const mainEntry = snapshotToBaileysEntry(record as DecodedSnapshot, { isOpen: true })
     if (!mainEntry) return { _sessions, version: 'v1' }
     const mainKey = toBase64(mainEntry.indexInfo.baseKey as Uint8Array)
     _sessions[mainKey] = mainEntry
@@ -356,7 +368,14 @@ export function protoToBaileysSession(proto: Uint8Array): BaileysSerializedSessi
     const closedBase = Date.now() - 1
     for (let i = 0; i < record.prevSessions.length; i += 1) {
         const prev = record.prevSessions[i]!
-        const entry = snapshotToBaileysEntry(prev, { isOpen: false, closedAtMs: closedBase - i })
+        // Same limit as the current session: no sender chain, no baileys entry.
+        // wa-store-migrate <= 0.1.1 wrote archived states from baileys that way.
+        if (!prev.senderChain) continue
+        const snapshot = sessionStructureToSnapshot(prev, `prevSession[${i}]`)
+        const entry = snapshotToBaileysEntry(snapshot, {
+            isOpen: false,
+            closedAtMs: closedBase - i
+        })
         if (!entry) continue
         const key = toBase64(entry.indexInfo.baseKey as Uint8Array)
         if (!(key in _sessions)) _sessions[key] = entry

@@ -1,3 +1,4 @@
+import type { proto } from 'zapo-js/proto'
 import { encodeSenderKeyRecord, encodeSignalSessionRecord } from 'zapo-js/signal'
 
 import type { AdapterCapabilities, IrDomain, StoreAdapter } from '@adapter'
@@ -41,7 +42,10 @@ interface WaWebSessionSnapshot {
     }>
     initialExchangeInfo?: unknown
     prevSendChainHighestIndex?: number
-    prevSessions?: ReadonlyArray<WaWebSessionSnapshot>
+    // Archived sessions are already `SessionStructure` protos: WASignalSessions
+    // decodes only the current session and writes `previousSessions` back as is.
+    // zapo keeps them the same way, so they pass through unchanged.
+    prevSessions?: ReadonlyArray<proto.ISessionStructure>
     aliceBaseKey?: Uint8Array
 }
 
@@ -70,7 +74,7 @@ function waWebSessionToZapo(s: WaWebSessionSnapshot): unknown {
         recvChains,
         initialExchangeInfo: s.initialExchangeInfo ?? null,
         prevSendChainHighestIndex: s.prevSendChainHighestIndex ?? 0,
-        prevSessions: (s.prevSessions ?? []).map((p) => waWebSessionToZapo(p)),
+        prevSessions: s.prevSessions ?? [],
         aliceBaseKey: s.aliceBaseKey ?? null
     }
 }
