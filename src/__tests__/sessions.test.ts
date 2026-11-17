@@ -13,8 +13,11 @@ import { baileysAdapter, type BaileysAuthSnapshot } from '@adapters/baileys'
 import { baileysSenderKeyToProto, protoToBaileysSenderKey } from '@adapters/baileys/sender-key'
 import { baileysSessionToProto, protoToBaileysSession } from '@adapters/baileys/session'
 import type { BaileysSerializedSessionEntry } from '@adapters/baileys/session-types'
+import { waWebAdapter } from '@adapters/wa-web'
 import { zapoAdapter } from '@adapters/zapo'
 import { migrate } from '@migrate'
+
+import { fakeWaWebSnapshot } from './fixtures.js'
 
 function fb(b: number, len: number): Uint8Array {
     return new Uint8Array(len).fill(b)
@@ -157,6 +160,45 @@ test('baileys session: closed entries become complete previous sessions', () => 
     assert.deepEqual(prev.receiverChains?.[0]?.senderRatchetKey, pub33(0x82))
 })
 
+test('baileys session: previous sessions survive proto -> baileys -> proto', () => {
+    const local = { regId: 1111, identityPubKey: pub33(0x10) }
+    const open = baileysEntry(0x40, -1)
+    const closed = baileysEntry(0x80, 900)
+    const proto1 = baileysSessionToProto(
+        {
+            version: 'v1',
+            _sessions: {
+                [b64(open.indexInfo.baseKey as Uint8Array)]: open,
+                [b64(closed.indexInfo.baseKey as Uint8Array)]: closed
+            }
+        },
+        local
+    )
+
+    const serialized = protoToBaileysSession(proto1)
+    const entries = Object.values(serialized._sessions)
+    assert.equal(entries.length, 2)
+    const archived = entries.find((e) => e.indexInfo.closed !== -1)
+    assert.deepEqual(archived?.currentRatchet.rootKey, fb(0x84, 32))
+
+    const proto2 = baileysSessionToProto(serialized, local)
+    assert.deepEqual(
+        proto.RecordStructure.decode(proto2).previousSessions,
+        proto.RecordStructure.decode(proto1).previousSessions
+    )
+})
+
+test('baileys session: archived states without a sender chain are skipped', () => {
+    // What wa-store-migrate <= 0.1.1 wrote for closed baileys entries.
+    const bytes = proto.RecordStructure.encode({
+        currentSession: proto.RecordStructure.decode(fakeProtoSession()).currentSession!,
+        previousSessions: [{ rootKey: fb(0x90, 32), aliceBaseKey: pub33(0x91) }]
+    }).finish()
+
+    const serialized = protoToBaileysSession(bytes)
+    assert.equal(Object.keys(serialized._sessions).length, 1)
+})
+
 test('baileys sender-key: proto -> baileys states -> proto preserves the latest state', () => {
     const proto1 = fakeProtoSenderKey()
     const sender = { user: '5511999999999', server: 's.whatsapp.net' as const, device: 0 }
@@ -219,4 +261,42 @@ test('baileys -> zapo: full migration including a session entry', () => {
 
     // sessions are flagged lossy on baileys but not as drops
     assert.equal(losses.filter((l) => l.severity === 'drop').length, 0)
+})
+
+test('wa-web session: previous sessions pass through to the proto record', () => {
+    // wa-web keeps archived sessions as SessionStructure protos.
+    const archived = proto.RecordStructure.decode(fakeProtoSession()).currentSession!
+    const snapshot = waWebAdapter.toCanonical({
+        ...fakeWaWebSnapshot(),
+        sessions: [
+            {
+                jid: '5511888888888@s.whatsapp.net',
+                device: 0,
+                session: {
+                    local: { regId: 1111, pubKey: pub33(0x10) },
+                    remote: { regId: 2222, pubKey: pub33(0x20) },
+                    rootKey: fb(0xc0, 32),
+                    sendChain: {
+                        ratchetKey: { serializedPubKey: pub33(0xc1), privateKey: fb(0xc2, 32) },
+                        nextMsgIndex: 1,
+                        chainKey: fb(0xc3, 32)
+                    },
+                    recvChains: [],
+                    initialExchangeInfo: null,
+                    prevSendChainHighestIndex: 0,
+                    prevSessions: [archived],
+                    aliceBaseKey: pub33(0xc4)
+                }
+            }
+        ]
+    })
+
+    const [session] = [...snapshot.sessions.values()]
+    assert.ok(session)
+    const record = proto.RecordStructure.decode(session.record.proto)
+    assert.equal(record.previousSessions.length, 1)
+    assert.deepEqual(
+        Buffer.from(proto.SessionStructure.encode(record.previousSessions[0]!).finish()),
+        Buffer.from(proto.SessionStructure.encode(archived).finish())
+    )
 })
