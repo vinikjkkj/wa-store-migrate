@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { proto } from 'zapo-js/proto'
 import {
     decodeSenderKeyRecord,
     decodeSignalSessionRecord,
@@ -11,6 +12,7 @@ import {
 import { baileysAdapter, type BaileysAuthSnapshot } from '@adapters/baileys'
 import { baileysSenderKeyToProto, protoToBaileysSenderKey } from '@adapters/baileys/sender-key'
 import { baileysSessionToProto, protoToBaileysSession } from '@adapters/baileys/session'
+import type { BaileysSerializedSessionEntry } from '@adapters/baileys/session-types'
 import { zapoAdapter } from '@adapters/zapo'
 import { migrate } from '@migrate'
 
@@ -24,6 +26,10 @@ function pub33(b: number): Uint8Array {
     out[0] = 0x05
     for (let i = 1; i < 33; i += 1) out[i] = b
     return out
+}
+
+function b64(bytes: Uint8Array): string {
+    return Buffer.from(bytes).toString('base64')
 }
 
 function fakeProtoSession(): Uint8Array {
@@ -83,6 +89,72 @@ test('baileys session: proto -> baileys serialized -> proto round-trips key stat
     assert.equal(decoded2.remote.regId, decoded1.remote.regId)
     assert.deepEqual(decoded2.rootKey, decoded1.rootKey)
     assert.deepEqual(decoded2.remote.pubKey, decoded1.remote.pubKey)
+})
+
+function baileysEntry(seed: number, closed: number): BaileysSerializedSessionEntry {
+    const ratchetPub = pub33(seed + 1)
+    const recvPub = pub33(seed + 2)
+    return {
+        registrationId: 2222,
+        currentRatchet: {
+            ephemeralKeyPair: { pubKey: ratchetPub, privKey: fb(seed + 3, 32) },
+            lastRemoteEphemeralKey: recvPub,
+            previousCounter: 0,
+            rootKey: fb(seed + 4, 32)
+        },
+        indexInfo: {
+            baseKey: pub33(seed + 5),
+            baseKeyType: 1,
+            closed,
+            used: 1000 + seed,
+            created: 1000 + seed,
+            remoteIdentityKey: pub33(0x20)
+        },
+        _chains: {
+            [b64(ratchetPub)]: {
+                chainKey: { counter: 4, key: fb(seed + 6, 32) },
+                chainType: 1,
+                messageKeys: {}
+            },
+            [b64(recvPub)]: {
+                chainKey: { counter: 2, key: fb(seed + 7, 32) },
+                chainType: 2,
+                messageKeys: {}
+            }
+        }
+    }
+}
+
+// go.mau.fi/libsignal decodes every previous state on load and panics on an
+// empty identity key, so archived entries must keep the full session state.
+test('baileys session: closed entries become complete previous sessions', () => {
+    const open = baileysEntry(0x40, -1)
+    const closed = baileysEntry(0x80, 900)
+    const bytes = baileysSessionToProto(
+        {
+            version: 'v1',
+            _sessions: {
+                [b64(open.indexInfo.baseKey as Uint8Array)]: open,
+                [b64(closed.indexInfo.baseKey as Uint8Array)]: closed
+            }
+        },
+        { regId: 1111, identityPubKey: pub33(0x10) }
+    )
+
+    const record = proto.RecordStructure.decode(bytes)
+    assert.equal(record.previousSessions.length, 1)
+    const prev = record.previousSessions[0]!
+    assert.deepEqual(prev.localIdentityPublic, pub33(0x10))
+    assert.deepEqual(prev.remoteIdentityPublic, pub33(0x20))
+    assert.equal(prev.localRegistrationId, 1111)
+    assert.equal(prev.remoteRegistrationId, 2222)
+    assert.deepEqual(prev.rootKey, fb(0x84, 32))
+    assert.deepEqual(prev.senderChain?.senderRatchetKey, pub33(0x81))
+    assert.deepEqual(prev.senderChain?.senderRatchetKeyPrivate, fb(0x83, 32))
+    assert.deepEqual(prev.senderChain?.chainKey?.key, fb(0x86, 32))
+    assert.equal(prev.senderChain?.chainKey?.index, 5)
+    assert.equal(prev.receiverChains?.length, 1)
+    assert.deepEqual(prev.receiverChains?.[0]?.senderRatchetKey, pub33(0x82))
 })
 
 test('baileys sender-key: proto -> baileys states -> proto preserves the latest state', () => {
