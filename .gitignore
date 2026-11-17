@@ -5,6 +5,10 @@
 /wa-web
 /whatsapp-rust
 
+# The adapter folders share names with source libs that a developer's global
+# excludes file may ignore everywhere (`wa-web/` did); repo rules win over it.
+!/src/adapters/*/
+
 # Build / package output
 node_modules
 dist
