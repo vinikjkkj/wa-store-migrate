@@ -35,6 +35,12 @@ function b64(bytes: Uint8Array): string {
     return Buffer.from(bytes).toString('base64')
 }
 
+// Decoded bytes are a Buffer or a plain Uint8Array depending on the zapo-js
+// version, and strict deep equality tells them apart.
+function assertBytes(actual: Uint8Array | null | undefined, expected: Uint8Array): void {
+    assert.deepEqual(Buffer.from(actual ?? []), Buffer.from(expected))
+}
+
 function fakeProtoSession(): Uint8Array {
     return encodeSignalSessionRecord({
         local: { regId: 1111, pubKey: pub33(0x10) },
@@ -147,17 +153,17 @@ test('baileys session: closed entries become complete previous sessions', () => 
     const record = proto.RecordStructure.decode(bytes)
     assert.equal(record.previousSessions.length, 1)
     const prev = record.previousSessions[0]!
-    assert.deepEqual(prev.localIdentityPublic, pub33(0x10))
-    assert.deepEqual(prev.remoteIdentityPublic, pub33(0x20))
+    assertBytes(prev.localIdentityPublic, pub33(0x10))
+    assertBytes(prev.remoteIdentityPublic, pub33(0x20))
     assert.equal(prev.localRegistrationId, 1111)
     assert.equal(prev.remoteRegistrationId, 2222)
-    assert.deepEqual(prev.rootKey, fb(0x84, 32))
-    assert.deepEqual(prev.senderChain?.senderRatchetKey, pub33(0x81))
-    assert.deepEqual(prev.senderChain?.senderRatchetKeyPrivate, fb(0x83, 32))
-    assert.deepEqual(prev.senderChain?.chainKey?.key, fb(0x86, 32))
+    assertBytes(prev.rootKey, fb(0x84, 32))
+    assertBytes(prev.senderChain?.senderRatchetKey, pub33(0x81))
+    assertBytes(prev.senderChain?.senderRatchetKeyPrivate, fb(0x83, 32))
+    assertBytes(prev.senderChain?.chainKey?.key, fb(0x86, 32))
     assert.equal(prev.senderChain?.chainKey?.index, 5)
     assert.equal(prev.receiverChains?.length, 1)
-    assert.deepEqual(prev.receiverChains?.[0]?.senderRatchetKey, pub33(0x82))
+    assertBytes(prev.receiverChains?.[0]?.senderRatchetKey, pub33(0x82))
 })
 
 test('baileys session: previous sessions survive proto -> baileys -> proto', () => {
@@ -179,7 +185,7 @@ test('baileys session: previous sessions survive proto -> baileys -> proto', () 
     const entries = Object.values(serialized._sessions)
     assert.equal(entries.length, 2)
     const archived = entries.find((e) => e.indexInfo.closed !== -1)
-    assert.deepEqual(archived?.currentRatchet.rootKey, fb(0x84, 32))
+    assertBytes(archived?.currentRatchet.rootKey as Uint8Array | undefined, fb(0x84, 32))
 
     const proto2 = baileysSessionToProto(serialized, local)
     assert.deepEqual(
@@ -295,8 +301,10 @@ test('wa-web session: previous sessions pass through to the proto record', () =>
     assert.ok(session)
     const record = proto.RecordStructure.decode(session.record.proto)
     assert.equal(record.previousSessions.length, 1)
+    const [prev] = record.previousSessions
+    assert.ok(prev)
     assert.deepEqual(
-        Buffer.from(proto.SessionStructure.encode(record.previousSessions[0]!).finish()),
+        Buffer.from(proto.SessionStructure.encode(prev).finish()),
         Buffer.from(proto.SessionStructure.encode(archived).finish())
     )
 })

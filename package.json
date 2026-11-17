@@ -89,6 +89,7 @@
         "build:types": "tsc -p tsconfig.types.json && tsc-alias -p tsconfig.types.json --resolve-full-paths && node scripts/strip-js.mjs dist/types",
         "build": "npm run clean && npm run build:cjs && npm run build:esm && npm run build:types",
         "prepublishOnly": "npm run build && npm test",
+        "smoke:pack": "node scripts/smoke-pack.mjs",
         "typecheck": "tsc -p tsconfig.json --noEmit",
         "test": "node --import tsx --test \"src/**/__tests__/**/*.test.ts\"",
         "test:watch": "node --import tsx --test --watch \"src/**/__tests__/**/*.test.ts\"",
@@ -112,6 +113,7 @@
         "prettier": "^3.8.3",
         "tsc-alias": "^1.8.17",
         "tsx": "^4.20.6",
+        "tweetnacl": "^1.0.3",
         "typescript": "^5.7.3",
         "typescript-eslint": "^8.59.1"
     },

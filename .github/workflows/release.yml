@@ -1,0 +1,63 @@
+name: Release
+
+# Manual. Land the release commit (`chore(release): x.y.z`, version bumped in
+# package.json and package-lock.json) on master, then run this workflow from the
+# Actions tab or with `gh workflow run release.yml`. It publishes the version in
+# package.json through npm trusted publishing (OIDC, no NPM_TOKEN), then tags the
+# commit and creates the GitHub release. Steps already done are skipped, so a
+# failed run is fixed by running it again.
+
+on:
+    workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+    group: release
+    cancel-in-progress: false
+
+jobs:
+    publish:
+        name: Publish
+        if: github.ref == 'refs/heads/master'
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        permissions:
+            contents: write # tag and GitHub release
+            id-token: write # OIDC token exchanged for npm publish credentials
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  persist-credentials: false
+            # Trusted publishing needs npm 11.5.1+, which ships with Node 24.
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  registry-url: 'https://registry.npmjs.org'
+            - run: npm ci
+            - run: npm run lint
+            - run: npm run format:check
+            - run: npm run typecheck
+            - run: npm test
+            - run: npm run build
+            - run: npm run smoke:pack
+
+            - name: Publish to npm, skip if the version is already there
+              run: |
+                  VERSION="$(node -p "require('./package.json').version")"
+                  if [ -n "$(npm view "wa-store-migrate@$VERSION" version 2>/dev/null)" ]; then
+                    echo "wa-store-migrate@$VERSION is already on npm, skipping"
+                  else
+                    npm publish --access public
+                  fi
+
+            - name: Tag and create the GitHub release, skip if it exists
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  VERSION="$(node -p "require('./package.json').version")"
+                  if gh release view "v$VERSION" >/dev/null 2>&1; then
+                    echo "release v$VERSION already exists, skipping"
+                  else
+                    gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
+                  fi
